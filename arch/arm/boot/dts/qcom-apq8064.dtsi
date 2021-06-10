@@ -1511,8 +1511,11 @@
 			reg-names = "ccu", "dxe", "pmu";
 
 			interrupts-extended = <&intc GIC_SPI 199 IRQ_TYPE_EDGE_RISING>,
-					      <&wcnss_smsm 6 IRQ_TYPE_EDGE_RISING>;
-			interrupt-names = "wdog", "fatal";
+					      <&wcnss_smsm 6 IRQ_TYPE_EDGE_RISING>,
+					      <&wcnss_smsm 7 IRQ_TYPE_EDGE_RISING>,
+					      <&wcnss_smsm 8 IRQ_TYPE_EDGE_RISING>,
+					      <&wcnss_smsm 9 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "wdog", "fatal", "ready", "handover", "stop-ack";
 
 			memory-region = <&wcnss_mem>;
 
