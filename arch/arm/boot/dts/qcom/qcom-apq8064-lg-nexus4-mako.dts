@@ -44,6 +44,41 @@
 	};
 };
 
+&dsi0_in {
+	remote-endpoint = <&mdp_dsi1_out>;
+};
+
+&dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&dsi0 {
+	status = "disabled"; // FIXME
+	vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
+	// vdd-supply = <&pm8921_l8>; // DRIVER DOESN'T USE IT (David)
+	vddio-supply = <&pm8921_lvs6>;
+	avdd-supply = <&pm8921_l8>;
+
+	panel@0 {
+	    reg = <0>;
+	    compatible = "lg,lh467wx1-sd01";
+
+	    vci-supply = <&pm8921_l8>;
+	    iovcc-supply = <&pm8921_lvs7>;
+
+//	          enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+	    reset-gpios = <&tlmm_pinmux 54 GPIO_ACTIVE_LOW>;
+//	          dcdc-en-gpios = <&pm8921_gpio 23 GPIO_ACTIVE_HIGH>;
+
+	    port {
+	        panel_in: endpoint {
+	            remote-endpoint = <&dsi0_out>;
+	        };
+	    };
+	};
+};
+
 &gsbi1 {
 	qcom,mode = <GSBI_PROT_I2C>;
 
@@ -64,6 +99,14 @@
 
 &gsbi4_serial {
 	status = "okay";
+};
+
+&mdp {
+	status = "okay";
+};
+
+&mdp_dsi1_out {
+	remote-endpoint = <&dsi0_in>;
 };
 
 &pm8821 {
