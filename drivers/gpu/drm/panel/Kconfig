@@ -284,6 +284,17 @@ config DRM_PANEL_LG_LG4573
 	  Say Y here if you want to enable support for LG4573 RGB panel.
 	  To compile this driver as a module, choose M here.
 
+config DRM_PANEL_LG_LH467WX1_SD01
+	tristate "LG LH467WX1-SD01 RGB DSI panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	# depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for LG DSI video mode
+	  panel as found in Google Nexus 4 (mako) devices.
+	  The panel has a 1200(RGB)×768 resolution and uses
+	  24 bit per pixel.
+
 config DRM_PANEL_NEC_NL8048HL11
 	tristate "NEC NL8048HL11 RGB panel"
 	depends on GPIOLIB && OF && SPI

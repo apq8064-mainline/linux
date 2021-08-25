@@ -4321,6 +4321,9 @@ static const struct of_device_id dsi_of_match[] = {
 		.compatible = "lg,lh500wx1-sd03",
 		.data = &lg_lh500wx1_sd03
 	}, {
+//		.compatible = "lg,lh467wx1-sd01",
+//		.data = &lg_lh467wx1_sd01
+//	}, {
 		.compatible = "panasonic,vvx10f004b00",
 		.data = &panasonic_vvx10f004b00
 	}, {

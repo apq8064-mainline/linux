@@ -32,6 +32,18 @@
 		};
 	};
 
+	ext_dsv_load: regulator-ext-dsv-load {
+		compatible = "regulator-fixed";
+//		regulator-min-microvolt = <3300000>;
+//		regulator-max-microvolt = <3300000>;
+		regulator-name = "ext_dsv_load";
+		regulator-type = "voltage";
+		startup-delay-us = <0>;
+		gpio = <&tlmm_pinmux 86 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+	};
+
 	battery_cell: battery-cell {
 		compatible = "simple-battery";
 		constant-charge-current-max-microamp = <900000>;
@@ -298,6 +310,58 @@
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
 					qcom,switch-mode-frequency = <1600000>;
+				};
+			};
+		};
+
+		mdp@5100000 {
+			status = "okay";
+			ports {
+				port@1 {
+					mdp_dsi1_out: endpoint {
+						remote-endpoint = <&dsi0_in>;
+					};
+				};
+			};
+		};
+
+		dsi0: mdss_dsi@4700000 {
+			status = "disabled";
+			vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
+			// vdd-supply = <&pm8921_l8>; // DRIVER DOESN'T USE IT (David)
+			vddio-supply = <&pm8921_lvs6>;
+			avdd-supply = <&pm8921_l8>;
+			// vcss-supply = <&ext_dsv_load>; // DOESN'T EXIST (David)
+
+			panel@0 {
+				reg = <0>;
+				compatible = "lg,lh467wx1-sd01";
+
+				vci-supply = <&pm8921_l8>;
+				iovcc-supply = <&pm8921_lvs7>;
+
+//				enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+				reset-gpios = <&tlmm_pinmux 54 GPIO_ACTIVE_LOW>;
+//				dcdc-en-gpios = <&pm8921_gpio 23 GPIO_ACTIVE_HIGH>;
+
+				port {
+					panel_in: endpoint {
+						remote-endpoint = <&dsi0_out>;
+					};
+				};
+			};
+			ports {
+				port@0 {
+					dsi0_in: endpoint {
+						remote-endpoint = <&mdp_dsi1_out>;
+					};
+				};
+
+				port@1 {
+					dsi0_out: endpoint {
+						remote-endpoint = <&panel_in>;
+						data-lanes = <0 1 2 3>;
+					};
 				};
 			};
 		};
