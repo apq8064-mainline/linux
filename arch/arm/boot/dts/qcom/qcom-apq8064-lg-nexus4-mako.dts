@@ -89,6 +89,21 @@
 	clock-frequency = <200000>;
 
 	status = "okay";
+
+	backlight: lm3530@38 {
+		compatible = "backlight,lm3530";
+		reg = <0x38>;
+
+		enable-gpios = <&pm8921_gpio 24 GPIO_ACTIVE_HIGH>;
+		ti,current-limit = /bits/ 8 <0x17>;
+		default-brightness = /bits/ 8 <0x10>;
+		max-brightness = /bits/ 8 <0x72>;
+		ti,led-mode = /bits/ 8 <0>; /* Manual Mode */
+		ti,linear-mapping-mode = /bits/ 8 <1>; /* Linear map */
+		ramp-up-ms = <8>;
+		ramp-down-ms = <8>;
+		ti,no-regulator;
+	};
 };
 
 &gsbi4 {
