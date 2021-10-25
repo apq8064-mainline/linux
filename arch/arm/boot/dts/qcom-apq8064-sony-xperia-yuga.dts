@@ -201,8 +201,8 @@
 				};
 
 				l11 {
-					regulator-min-microvolt = <3000000>;
-					regulator-max-microvolt = <3000000>;
+					regulator-min-microvolt = <2850000>;
+					regulator-max-microvolt = <2850000>;
 					bias-pull-down;
 				};
 
@@ -371,6 +371,66 @@
 				pinctrl-0 = <&gsbi5_uart_pin_a>;
 			};
 		};
+
+                gsbi@12440000 {
+                        status = "okay";
+                        qcom,mode = <GSBI_PROT_I2C>;
+
+                        i2c@12460000 {
+                                status = "okay";
+
+				clock-frequency = <200000>;
+				pinctrl-0 = <&i2c1_pins>;
+				pinctrl-names = "default";
+
+                                lm3533@36 {
+                                        compatible = "ti,lm3533";
+                                        reg = <0x36>;
+
+                                        ti,hwen-gpios = <&pm8921_gpio 26 GPIO_ACTIVE_HIGH>;
+                                        ti,als-supply = <&pm8921_l11>;
+
+                                        ti,boost-freq = <500000>;
+                                        ti,boost-ovp = <24>;
+
+                                        #address-cells = <1>;
+                                        #size-cells = <0>;
+
+                                        als {
+                                                ti,als-resistance = <200000>;
+                                        };
+
+                                        backlight@0 {
+                                                reg = <0>;
+                                                label = "backlight";
+
+                                                led-max-microamp = <20200>;
+                                        };
+
+                                        led@0 {
+                                                reg = <0>;
+                                                label = "red";
+
+                                                led-max-microamp = <5000>;
+                                        };
+
+                                        led@1 {
+                                                reg = <1>;
+                                                label = "green";
+
+                                                led-max-microamp = <5000>;
+                                        };
+
+                                        led@2 {
+                                                reg = <2>;
+                                                label = "blue";
+
+                                                led-max-microamp = <5000>;
+                                        };
+                                };
+                        };
+                };
+
 
 		amba {
 			sdcc1: mmc@12400000 {
