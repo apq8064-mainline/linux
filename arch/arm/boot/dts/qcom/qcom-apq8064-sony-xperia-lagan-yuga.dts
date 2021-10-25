@@ -314,8 +314,8 @@
 		};
 
 		pm8921_l29: l29 {
-			regulator-min-microvolt = <2000000>;
-			regulator-max-microvolt = <2000000>;
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
 			bias-pull-down;
 		};
 
@@ -358,8 +358,61 @@
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
 			qcom,switch-mode-frequency = <1600000>;
+
 		};
 	};
+};
+
+&mdp {
+	status = "okay";
+	// vdda-supply = <&pm8921_l2>; // FIXME this doesn't belong here
+	// vddio-supply = <&pm8921_lvs7>; // FIXME ^
+};
+
+&mdp_dsi1_out {
+	remote-endpoint = <&dsi0_in>;
+};
+
+&dsi0 {
+	status = "okay";
+	vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
+	//vdd-supply = <&pm8921_l8>;
+	vddio-supply = <&pm8921_l29>;
+	avdd-supply = <&pm8921_l11>;
+	//vcss-supply = <&ext_3p3v>;
+
+	panel@0 {
+		reg = <0>;
+		compatible = "jdc,mdy70";
+
+		//vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
+		vddp-supply = <&pm8921_l11>;
+		iovcc-supply = <&pm8921_l29>;
+
+		//enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pm8921_gpio 25 GPIO_ACTIVE_LOW>;
+		dcdc-en-gpios = <&pm8921_gpio 24 GPIO_ACTIVE_HIGH>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&dsi0_out>;
+			};
+		};
+	};
+};
+
+&dsi0_in {
+	remote-endpoint = <&mdp_dsi1_out>;
+};
+
+&dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&dsi0_phy {
+	status = "okay";
+	vddio-supply = <&pm8921_lvs7>;/*VDD_PLL2_1 to 7*/
 };
 
 &sdcc1 {
