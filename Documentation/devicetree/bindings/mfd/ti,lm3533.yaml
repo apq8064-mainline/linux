@@ -1,0 +1,198 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mfd/ti,lm3533.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: TI LM3533 LED driver
+
+maintainers:
+  - Wouter Franken <wouter.franken@gmail.com>
+
+properties:
+  compatible:
+    const: ti,lm3533
+
+  reg:
+    description: I2C slave address
+    maxItems: 1
+
+  hwen-gpios:
+    description:
+      Reference to gpio pin connected to the HWEN input
+    maxItems: 1
+
+  als-supply:
+    description:
+      reference to regulator powering the V_als input
+
+  boost-freq-hz:
+    description:
+      switch-frequency of the boost converter
+    enum:
+      - 500000
+      - 1000000
+
+  boost-ovp-microvolt:
+    description:
+      Over voltage protection limit
+    enum:
+      - 16000000
+      - 24000000
+      - 32000000
+      - 40000000
+
+  '#address-cells':
+    const: 1
+
+  '#size-cells':
+    const: 0
+
+  als:
+    description: ALS related properties.
+    type: object
+
+    properties:
+      ti,als-resistance-ohms:
+        description: The resistor value (R_als).
+        minimum: 1574
+        maximum: 200000
+
+      ti,pwm-mode:
+        description: >
+          Specifies, if present, that the als should
+          operate in pwm mode - rather than analog mode.
+        type: boolean
+
+required:
+  - compatible
+  - reg
+  - hwen-gpios
+  - ti,boost-freq-khz
+  - ti,boost-ovp
+  - '#address-cells'
+  - '#size-cells'
+
+patternProperties:
+  "^backlight@[01]$":
+    description: Backlight related properties.
+    type: object
+
+    properties:
+      reg:
+        description:
+          To which of two backlight nodes this corresponds to.
+        maxItems: 1
+
+      default-brightness:
+        description:
+          The default brightness for the backlight.
+        minimum: 0
+        maximum: 255
+        $ref: types.yaml#/definitions/uint8
+
+      label:
+        description: Name for this backlight.
+        maxItems: 1
+
+      led-max-microamp:
+        description:
+          The max current for this backlight.
+
+      ti,pwm-zones:
+        description:
+          Lists the ALS zones to be PWM controlled for this backlight.
+        minimum: 0
+        maximum: 4
+        $ref: types.yaml#/definitions/uint32-array
+
+    required:
+      - reg
+      - label
+      - led-max-microamp
+
+  "^led@[0123]$":
+    description: LED related properties.
+    type: object
+
+    properties:
+      reg:
+        description: Which of four LED nodes this corresponds to.
+        maxItems: 1
+
+      linux,default-trigger:
+        description: The default trigger for the LED.
+
+      label:
+        description: Name of this LED.
+        maxItems: 1
+
+      led-max-microamp:
+        description: The max current for this LED.
+
+      ti,pwm-zones:
+        description:
+          Lists the ALS zones to be PWM controlled for this LED.
+        minimum: 0
+        maximum: 4
+        $ref: types.yaml#/definitions/uint32-array
+
+    required:
+      - reg
+      - label
+      - led-max-microamp
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    i2c@12460000 {
+        compatible = "qcom,i2c-qup-v1.1.1";
+
+        lm3533@36 {
+            compatible = "ti,lm3533";
+            reg = <0x36>;
+
+            hwen-gpios = <&pm8921_gpio 26 GPIO_ACTIVE_HIGH>;
+            als-supply = <&pm8921_l11>;
+
+            ti,boost-freq-hz = <500000>;
+            ti,boost-ovp-microvolt = <24000000>;
+
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            als {
+                ti,als-resistance-ohm = <200000>;
+            };
+
+            backlight@0 {
+                reg = <0>;
+                label = "backlight";
+
+                led-max-microamp = <20200>;
+            };
+
+            led@0 {
+                reg = <0>;
+                label = "red";
+
+                led-max-microamp = <5000>;
+            };
+
+            led@1 {
+                reg = <1>;
+                label = "green";
+
+                led-max-microamp = <5000>;
+            };
+
+            led@2 {
+                reg = <2>;
+                label = "blue";
+
+                led-max-microamp = <5000>;
+            };
+    };
