@@ -89,6 +89,9 @@
 #define MAX_BRIGHTNESS			(127)
 #define MAX_USER_BRIGHTNESS		(255)
 
+#define LM3530_NUM_RAMP_VALS	8
+static const int ramp_table[LM3530_NUM_RAMP_VALS] = { 8, 128, 256, 512, 1024, 2048, 4096, 8192};
+
 struct lm3530_mode_map {
 	const char *mode;
 	enum lm3530_mode mode_val;
@@ -195,6 +198,39 @@ static void lm3530_als_configure(struct lm3530_platform_data *pdata,
 	als->imp_sel =
 		(pdata->als1_resistor_sel << LM3530_ALS1_IMP_SHIFT) |
 		(pdata->als2_resistor_sel << LM3530_ALS2_IMP_SHIFT);
+}
+
+static int lm3530_get_index(const int table[], int size, int value)
+{
+	int i;
+
+	for (i = 1; i < size; i++) {
+		if (value == table[i])
+			return i;
+
+		/* Find an approximate index by looking up the table */
+		if (value > table[i - 1] &&
+		    value < table[i]) {
+			if (value - table[i - 1] < table[i] - value)
+				return i - 1;
+			else
+				return i;
+		}
+	}
+
+	return -EINVAL;
+}
+
+static int lm3530_get_ramp_index(int ramp_time)
+{
+	if (ramp_time <= ramp_table[0])
+		return 0;
+
+	if (ramp_time > ramp_table[LM3530_NUM_RAMP_VALS - 1])
+		return LM3530_NUM_RAMP_VALS - 1;
+
+	return lm3530_get_index(&ramp_table[0], LM3530_NUM_RAMP_VALS,
+				ramp_time);
 }
 
 static int lm3530_led_enable(struct lm3530_data *drvdata)
@@ -442,66 +478,66 @@ static int lm3530_parse_dt(struct device *dev,
 {
 	struct device_node *np = dev->of_node;
 	int err = 0;
+	u32 ramp_time;
 	u8 tmp;
 
-	pdata->en_gpio = of_get_named_gpio(np, "lm3530,en_gpio", 0);
+	pdata->en_gpio = of_get_named_gpio(np, "enable-gpios", 0);
 	if (pdata->en_gpio < 0) {
-		dev_err(dev, "failed to get lm3530,en_gpio\n");
+		dev_err(dev, "failed to get enable-gpios\n");
 		err = pdata->en_gpio;
 		return err;
 	}
 
-	err = of_property_read_u8(np, "lm3530,mode", &tmp);
+	err = of_property_read_u8(np, "ti,led-mode", &tmp);
 	if (err < 0) {
-		dev_err(dev, " failed to get lm3530,mode\n");
+		dev_err(dev, " failed to get ti,led-mode\n");
 		return err;
 	}
 	pdata->mode = (enum lm3530_mode)tmp;
 
-	err = of_property_read_u8(np, "lm3530,max_current",
+	err = of_property_read_u8(np, "ti,current-limit",
 					&pdata->max_current);
 	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,max_current\n");
+		dev_err(dev, "failed to get ti,current-limit\n");
 		return err;
 	}
 
-	err = of_property_read_u8(np, "lm3530,linear_map", &tmp);
+	err = of_property_read_u8(np, "ti,linear-mapping-mode", &tmp);
 	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,linear_map\n");
+		dev_err(dev, "failed to get ti,linear-mapping-mode\n");
 		return err;
 	}
 	pdata->brt_ramp_law = (bool)tmp;
 
-	err = of_property_read_u8(np, "lm3530,max_brt",
+	err = of_property_read_u8(np, "max-brightness",
 					&pdata->max_brt);
 	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,max_brt\n");
+		dev_err(dev, "failed to get max-brightness\n");
 		return err;
 	}
 
-	err = of_property_read_u8(np, "lm3530,default_brt",
+	err = of_property_read_u8(np, "default-brightness",
 					&pdata->brt_val);
 	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,default_brt\n");
+		dev_err(dev, "failed to get default-brightness\n");
 		return err;
 	}
 
-	err = of_property_read_u8(np, "lm3530,brt_ramp_fall",
-					&pdata->brt_ramp_fall);
-	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,brt_ramp_fall\n");
-		return err;
-	}
+	err = of_property_read_u32(np, "ramp-up-ms", &ramp_time);
+	if (err)
+		dev_info(dev, "ramp-up-ms property missing\n");
+	else
+		pdata->brt_ramp_rise = lm3530_get_ramp_index(ramp_time);
 
-	err = of_property_read_u8(np, "lm3530,brt_ramp_rise",
-					&pdata->brt_ramp_rise);
-	if (err < 0) {
-		dev_err(dev, "failed to get lm3530,brt_ramp_rise\n");
-		return err;
-	}
+	err = of_property_read_u32(np, "ramp-down-ms", &ramp_time);
+	if (err)
+		dev_info(dev, "ramp-down-ms property missing\n");
+	else
+		pdata->brt_ramp_fall = lm3530_get_ramp_index(ramp_time);
+
 
 	pdata->no_regulator = of_property_read_bool(np,
-					"lm3530,no_regulator");
+					"ti,no-regulator");
 
 	return 0;
 }
@@ -552,6 +588,7 @@ static int lm3530_probe(struct i2c_client *client,
 
 	/* BL mode */
 	if (pdata->mode > LM3530_BL_MODE_PWM) {
+
 		dev_err(&client->dev, "Illegal Mode request\n");
 		return -EINVAL;
 	}
@@ -642,7 +679,7 @@ static int lm3530_remove(struct i2c_client *client)
 }
 
 static const struct of_device_id lm3530_match_table[] = {
-	{ .compatible = "backlight,lm3530",},
+	{ .compatible = "ti,lm3530",},
 	{ },
 };
 

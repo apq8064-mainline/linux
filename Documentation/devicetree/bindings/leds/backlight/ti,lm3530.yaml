@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/leds/backlight/ti,lm3530.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Texas Instrument LM3530 backlight
+
+maintainers:
+  - Ivan Belokobylskiy <belokobylskij@gmail.com>
+
+description: |
+  The Texas Instruments LM3530 is white LED backlight.
+
+allOf:
+  - $ref: common.yaml#
+
+properties:
+  compatible:
+    const: ti,lm3530
+
+  enable-gpios:
+    description: GPIO to use to enable/disable and dim the backlight.
+    maxItems: 1
+
+  default-brightness: true
+
+  max-brightness: true
+
+  ramp-up-ms:
+    description: >
+        The Run time ramp rates/step are from one current
+        set-point to another after the device has reached its
+        initial target set point from turn-on
+    minimum: 0
+    maximum: 8192
+
+  ramp-down-ms:
+    description: >
+        The Run time ramp rates/step are from one current
+        set-point to another after the device has reached its
+        initial target set point from turn-on
+    minimum: 0
+    maximum: 8192
+
+  ti,led-mode:
+    $ref: /schemas/types.yaml#/definitions/uint8
+    description: what mode ? FIXME.
+
+  ti,current-limit:
+    $ref: /schemas/types.yaml#/definitions/uint8
+    description: >
+      initial maximum current charger can pull from
+      power supply in ?? FIXME. (also then new name could be
+      current-limit-microvolt/milivolt ? TODO FIXME
+
+  ti,linear-mapping-mode:
+    $ref: /schemas/types.yaml#/definitions/uint8
+    description: |
+      Enable linear mapping mode. If disabled, then it will use exponential
+      mapping mode in which the ramp up/down appears to have a more uniform
+      transition to the human eye.
+
+
+  ti,no-regulator:
+    description: FIXME TODO, maybe we could deprecated this option at all
+      and adjust driver to just print there is no regulator and continue?
+    type: boolean
+
+required:
+  - compatible
+  - enable-gpios
+  - ti,led-mode
+  - ti,current-limit
+  - ti,linear-mapping-mode
+  - max-brightness
+  - default-brightness
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+    backlight {
+        compatible = "ti,lm3530";
+        enable-gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
+        default-brightness = <0x10>;
+        max-brightness = <0x72>;
+        ramp-up-ms = <8>;
+        ramp-down-ms = <8>;
+        ti,current-limit = /bits/ 8 <0x17>;
+        ti,led-mode = /bits/ 8 <0>;
+        ti,linear-mapping-mode = /bits/ 8 <0>;
+        ti,no-regulator;
+    };
