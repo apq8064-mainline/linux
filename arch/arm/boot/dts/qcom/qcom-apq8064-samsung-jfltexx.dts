@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+
+#include "qcom-apq8064-samsung-jf-common.dtsi"
+
+/ {
+	compatible = "samsung,jfltexx", "qcom,apq8064";
+	model = "Samsung Galaxy S4 (GT-I9505)";
+};
+
