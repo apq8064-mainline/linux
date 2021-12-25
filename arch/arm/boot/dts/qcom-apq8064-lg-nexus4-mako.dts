@@ -325,7 +325,7 @@
 			};
 		};
 
-		dsi0: mdss_dsi@4700000 {
+		dsi0: dsi@4700000 {
 			status = "disabled";
 			vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
 			// vdd-supply = <&pm8921_l8>; // DRIVER DOESN'T USE IT (David)
