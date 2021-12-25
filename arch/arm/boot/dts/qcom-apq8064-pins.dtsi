@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 &tlmm_pinmux {
-	sdc4_gpios: sdc4-gpios {
+	sdc4_gpios: sdc4-pins {
 		pios {
 			pins = "gpio63", "gpio64", "gpio65", "gpio66", "gpio67", "gpio68";
 			function = "sdc4";
