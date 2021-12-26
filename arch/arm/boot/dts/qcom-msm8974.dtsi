@@ -1525,7 +1525,7 @@
 			dsi0: dsi@fd922800 {
 				status = "disabled";
 
-				compatible = "qcom,mdss-dsi-ctrl";
+				compatible = "qcom,dsi-ctrl-6g-v1.0.0", "qcom,mdss-dsi-ctrl";
 				reg = <0xfd922800 0x1f8>;
 				reg-names = "dsi_ctrl";
 
