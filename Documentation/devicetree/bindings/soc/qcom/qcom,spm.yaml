@@ -4,7 +4,7 @@
 $id: "http://devicetree.org/schemas/soc/qcom/qcom,spm.yaml#"
 $schema: "http://devicetree.org/meta-schemas/core.yaml#"
 
-title: Qualcomm Subsystem Power Manager binding
+title: Qualcomm Subsystem Power Manager and AVS Wrapper 2 (SAW2)
 
 maintainers:
   - Andy Gross <agross@kernel.org>
@@ -13,6 +13,22 @@ maintainers:
 description: |
   This binding describes the Qualcomm Subsystem Power Manager, used to control
   the peripheral logic surrounding the application cores in Qualcomm platforms.
+
+  The SAW2 is a wrapper around the Subsystem Power Manager (SPM) and the
+  Adaptive Voltage Scaling (AVS) hardware. The SPM is a programmable
+  power-controller that transitions a piece of hardware (like a processor or
+  subsystem) into and out of low power modes via a direct connection to
+  the PMIC. It can also be wired up to interact with other processors in the
+  system, notifying them when a low power state is entered or exited.
+
+  Multiple revisions of the SAW hardware are supported using these Device Nodes.
+  SAW2 revisions differ in the register offset and configuration data. Also, the
+  same revision of the SAW in different SoCs may have different configuration
+  data due the differences in hardware capabilities. Hence the SoC name, the
+  version of the SAW hardware in that SoC and the distinction between cpu (big
+  or Little) or cache, may be needed to uniquely identify the SAW register
+  configuration and initialization data. The compatible string is used to
+  indicate this parameter.
 
 properties:
   compatible:
@@ -31,7 +47,19 @@ properties:
 
   reg:
     description: Base address and size of the SPM register region
-    maxItems: 1
+    minItems: 1
+    items:
+      - description: register region
+      - description: alias register region
+
+  regulator:
+    type: boolean
+    description: >
+      Indicates that this SPM device acts as a regulator device
+      device for the core (CPU or Cache) the SPM is attached to.
+
+  '#power-domain-cells':
+    const: 0
 
 required:
   - compatible
