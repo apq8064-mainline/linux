@@ -457,7 +457,7 @@
 		};
 
 		sps_sic_non_secure: sps-sic-non-secure@12100000 {
-			compatible	= "syscon";
+			compatible	= "qcom,sic-non-secure", "syscon";
 			reg		= <0x12100000 0x10000>;
 		};
 
@@ -1263,7 +1263,7 @@
 		};
 
 		mmss_sfpb: syscon@5700000 {
-			compatible = "syscon";
+			compatible = "qcom,mmss-sfpb", "syscon";
 			reg = <0x5700000 0x70>;
 		};
 
