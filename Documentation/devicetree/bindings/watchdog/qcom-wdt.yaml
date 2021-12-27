@@ -10,26 +10,72 @@ maintainers:
   - Sai Prakash Ranjan <saiprakash.ranjan@codeaurora.org>
 
 allOf:
-  - $ref: watchdog.yaml#
+  - if:
+      properties:
+        compatible:
+          contains:
+            const: qcom,msm-timer
+    then:
+      properties:
+        $nodename:
+          pattern: '^timer@[a-f0-9]+$'
+
+        interrupts:
+          minItems: 1
+          items:
+            - description: 1st purpose timer
+            - description: 2nd general purpose timer
+            - description: 1st watchdog interrupt
+            - description: 2nd watchdog interrupt
+            - description: 3nd watchdog interrupt
+
+        cpu-offset:
+          $ref: /schemas/types.yaml#/definitions/uint32
+          description: >
+            Per-cpu offset used when the timer is accessed without the
+            CPU remapping facilities. The offset is cpu-offset + (0x10000 * cpu-nr).
+
+      required:
+        - interrupts
+        - clock-frequency
+
+    else:
+      $ref: watchdog.yaml#
+      properties:
+        interrupts:
+          maxItems: 1
+
+        cpu-offset: false
+
+        timeout-sec: true
+
+      required:
+        - clocks
+
+      unevaluatedProperties: false
 
 properties:
   compatible:
-    enum:
-      - qcom,apss-wdt-qcs404
-      - qcom,apss-wdt-sc7180
-      - qcom,apss-wdt-sc7280
-      - qcom,apss-wdt-sdm845
-      - qcom,apss-wdt-sdx55
-      - qcom,apss-wdt-sm6350
-      - qcom,apss-wdt-sm8150
-      - qcom,apss-wdt-sm8250
-      - qcom,kpss-timer
-      - qcom,kpss-wdt
-      - qcom,kpss-wdt-apq8064
-      - qcom,kpss-wdt-ipq4019
-      - qcom,kpss-wdt-ipq8064
-      - qcom,kpss-wdt-msm8960
-      - qcom,scss-timer
+    minItems: 1
+    maxItems: 3
+    items:
+      enum:
+        - qcom,apss-wdt-qcs404
+        - qcom,apss-wdt-sc7180
+        - qcom,apss-wdt-sc7280
+        - qcom,apss-wdt-sdm845
+        - qcom,apss-wdt-sdx55
+        - qcom,apss-wdt-sm6350
+        - qcom,apss-wdt-sm8150
+        - qcom,apss-wdt-sm8250
+        - qcom,kpss-timer
+        - qcom,kpss-wdt
+        - qcom,kpss-wdt-apq8064
+        - qcom,kpss-wdt-ipq4019
+        - qcom,kpss-wdt-ipq8064
+        - qcom,kpss-wdt-msm8960
+        - qcom,scss-timer
+        - qcom,msm-timer  # remove
 
   reg:
     maxItems: 1
@@ -37,11 +83,20 @@ properties:
   clocks:
     maxItems: 1
 
+  clock-names:
+    maxItems: 1
+
+  interrupts: true
+
+  clock-frequency: true
+
+  cpu-offset: true
+
 required:
   - compatible
   - reg
-  - clocks
 
+additionalProperties: false
 unevaluatedProperties: false
 
 examples:
