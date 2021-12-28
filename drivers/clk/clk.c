@@ -2065,6 +2065,7 @@ clk_change_rate(struct clk_core *core, unsigned long best_parent_rate)
 	struct clk_core *old_parent;
 	struct clk_core *parent = NULL;
 
+	pr_warn("%s: entered clk_change_rate with best_parent_rate '%lu'\n", __func__, best_parent_rate);
 	old_rate = core->rate;
 
 	if (core->new_parent) {
@@ -2074,6 +2075,7 @@ clk_change_rate(struct clk_core *core, unsigned long best_parent_rate)
 		parent = core->parent;
 		best_parent_rate = core->parent->rate;
 	}
+	pr_warn("%s: new best_parent_rate '%lu'\n", __func__, best_parent_rate);
 
 	if (clk_pm_runtime_get(core))
 		return;
@@ -2111,7 +2113,9 @@ clk_change_rate(struct clk_core *core, unsigned long best_parent_rate)
 	trace_clk_set_rate_complete(core, core->new_rate);
 
 	core->rate = clk_recalc(core, best_parent_rate);
+	pr_warn("%s: core->rate calc '%lu'\n", __func__, core->rate);
 	core->rate = core->new_rate;
+	pr_warn("%s: final core->rate assigned '%lu'\n", __func__, core->rate);
 
 	if (core->flags & CLK_SET_RATE_UNGATE) {
 		clk_core_disable_lock(core);
@@ -2135,11 +2139,16 @@ clk_change_rate(struct clk_core *core, unsigned long best_parent_rate)
 		/* Skip children who will be reparented to another clock */
 		if (child->new_parent && child->new_parent != core)
 			continue;
+		pr_warn("%s: child->new-rate <=> core->rate: '%lu' <=> '%lu'\n", __func__, child->new_rate, core->rate);
 		if (child->new_rate != child->rate)
 			clk_change_rate(child, core->new_rate);
 	}
 
 	/* handle the new child who might not be in core->children yet */
+	if (core->new_child) {
+	  pr_warn("%s: core->new_child->new_rate '%lu'\n", __func__, core->new_child->new_rate);
+	  pr_warn("%s: core->new_child->rate '%lu'\n", __func__, core->new_child->rate);
+	}
 	if (core->new_child && core->new_child->new_rate != core->new_child->rate)
 		clk_change_rate(core->new_child, core->new_rate);
 
@@ -2213,10 +2222,13 @@ static int clk_core_set_rate_nolock(struct clk_core *core,
 		goto err;
 	}
 
-	if (top->parent)
+	if (top->parent) {
+		pr_warn("%s: parent rate: '%lu'\n", __func__, parent_rate);
 		parent_rate = top->parent->rate;
-	else
+	} else {
+		pr_warn("%s: default parent rate\n", __func__);
 		parent_rate = 0;
+	}
 
 	/* change the rates */
 	clk_change_rate(top, parent_rate);
