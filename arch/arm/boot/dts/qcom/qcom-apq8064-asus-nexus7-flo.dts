@@ -267,6 +267,12 @@
 			qcom,switch-mode-frequency = <3200000>;
 		};
 
+		s8 {
+			regulator-min-microvolt = <2200000>;
+			regulator-max-microvolt = <2200000>;
+			qcom,switch-mode-frequency = <1600000>;
+		};
+
 		/* mipi_dsi.1-dsi1_pll_vdda */
 		pm8921_l2: l2 {
 			regulator-min-microvolt = <1200000>;
@@ -375,6 +381,11 @@
 		pm8921_lvs7: lvs7 {
 			bias-pull-down;
 			regulator-always-on;
+		};
+		ncp {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			qcom,switch-mode-frequency = <1600000>;
 		};
 	};
 };
