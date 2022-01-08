@@ -83,15 +83,15 @@
 
 		rpm@108000 {
 			regulators {
-				vin_l1_l2_l12_l18-supply = <&pm8921_s4>;
-				vin_lvs_1_3_6-supply = <&pm8921_s4>;
-				vin_lvs_4_5_7-supply = <&pm8921_s4>;
-				vin_ncp-supply = <&pm8921_l6>;
+				vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
+				vdd_l24-supply = <&pm8921_s1>;
+				vdd_l25-supply = <&pm8921_s1>;
+				vdd_l27-supply = <&pm8921_s7>;
+				vdd_l28-supply = <&pm8921_s7>;
+				vdd_ncp-supply = <&pm8921_l6>;
+				vin_lvs1_3_6-supply = <&pm8921_s4>;
 				vin_lvs2-supply = <&pm8921_s4>;
-				vin_l24-supply = <&pm8921_s1>;
-				vin_l25-supply = <&pm8921_s1>;
-				vin_l27-supply = <&pm8921_s7>;
-				vin_l28-supply = <&pm8921_s7>;
+				vin_lvs4_5_7-supply = <&pm8921_s4>;
 
 				/* Buck SMPS */
 				s1 {
