@@ -327,16 +327,12 @@
 		};
 	};
 
-	regulators {
-		compatible = "simple-bus";
-
-		ext_l2: gpio-regulator@91 {
-			compatible = "regulator-fixed";
-			regulator-name = "ext_l2";
-			gpio = <&msmgpio 91 0>;
-			startup-delay-us = <10000>;
-			enable-active-high;
-		};
+	ext_l2: gpio-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "ext_l2";
+		gpio = <&msmgpio 91 0>;
+		startup-delay-us = <10000>;
+		enable-active-high;
 	};
 };
 
