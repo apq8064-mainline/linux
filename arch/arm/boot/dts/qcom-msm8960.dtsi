@@ -251,6 +251,16 @@
 					reg = <0x11d>;
 					allow-set-time;
 				};
+
+				pm8921_gpio: gpio@150 {
+					compatible = "qcom,pm8921-gpio", "qcom,ssbi-gpio";
+					reg = <0x150>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+					gpio-controller;
+					gpio-ranges = <&pm8921_gpio 0 0 44>;
+					#gpio-cells = <2>;
+				};
 			};
 		};
 
