@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: GPL-2.0-only
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/regulator/qcom,smd-rpm-regulator-pm8018.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Qualcomm SMD RPM Regulator PM8018
+
+maintainers:
+  - Bjorn Andersson <bjorn.andersson@linaro.org>
+
+allOf:
+  - $ref: qcom,smd-rpm-regulator-common.yaml#
+
+properties:
+  compatible:
+    const: qcom,rpm-pm8018-regulators
+
+  s1: true
+  s2:
+    $ref: "qcom,smd-rpm-regulator-common.yaml#/$defs/s"
+  s3: true
+  s4: true
+  s5: true
+
+  l2: true
+  l3: true
+  l4: true
+  l5: true
+  l6: true
+  l7: true
+  l8: true
+  l9: true
+  l10: true
+  l11: true
+  l12: true
+  l14: true
+
+  lvs1: true
+
+  vdd_s1-supply: true
+  vdd_s2-supply: true
+  vdd_s3-supply: true
+  vdd_s4-supply: true
+  vdd_s5-supply: true
+
+  vdd_l2-supply: true
+  vdd_l3-supply: true
+  vdd_l4-supply: true
+  vdd_l5-supply: true
+  vdd_l7-supply: true
+  vdd_l8-supply: true
+  vdd_l9_l10_l11_l12-supply: true
+  vdd_l14-supply: true
+
+  lvs1_in-supply: true
+
+unevaluatedProperties: false
