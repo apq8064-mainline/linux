@@ -493,7 +493,7 @@
                 };
 
 
-		amba {
+		apb@12180000 {
 			sdcc1: mmc@12400000 {
 				status = "okay";
 

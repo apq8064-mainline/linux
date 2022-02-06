@@ -1101,7 +1101,7 @@
 			qcom,ee = <0>;
 		};
 
-		amba {
+		apb@12180000 {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
