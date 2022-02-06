@@ -312,7 +312,7 @@
 			};
 		};
 
-		amba {
+		apb@12180000 {
 			/* eMMC */
 			sdcc1: mmc@12400000 {
 				status = "okay";

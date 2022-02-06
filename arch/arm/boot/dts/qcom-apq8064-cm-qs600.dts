@@ -218,7 +218,7 @@
 			perst-gpio = <&tlmm_pinmux 27 GPIO_ACTIVE_LOW>;
 		};
 
-		amba {
+		apb@12180000 {
 			/* eMMC */
 			sdcc1: mmc@12400000 {
 				status = "okay";
