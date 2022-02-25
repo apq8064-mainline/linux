@@ -1653,7 +1653,6 @@ int ip6_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 	mifi_t mifi;
 	struct net *net = sock_net(sk);
 	struct mr_table *mrt;
-	bool do_wrmifwhole;
 
 	if (sk->sk_type != SOCK_RAW ||
 	    inet_sk(sk)->inet_num != IPPROTO_ICMPV6)
@@ -1761,6 +1760,7 @@ int ip6_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 #ifdef CONFIG_IPV6_PIMSM_V2
 	case MRT6_PIM:
 	{
+		bool do_pim;
 		int v;
 
 		if (optlen != sizeof(v))
@@ -1768,14 +1768,14 @@ int ip6_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 		if (copy_from_sockptr(&v, optval, sizeof(v)))
 			return -EFAULT;
 
-		do_wrmifwhole = (v == MRT6MSG_WRMIFWHOLE);
-		v = !!v;
+		do_pim = !!v;
+
 		rtnl_lock();
 		ret = 0;
-		if (v != mrt->mroute_do_pim) {
-			mrt->mroute_do_pim = v;
-			mrt->mroute_do_assert = v;
-			mrt->mroute_do_wrvifwhole = do_wrmifwhole;
+		if (do_pim != mrt->mroute_do_pim) {
+			mrt->mroute_do_pim = do_pim;
+			mrt->mroute_do_assert = do_pim;
+			mrt->mroute_do_wrvifwhole = (v == MRT6MSG_WRMIFWHOLE);
 		}
 		rtnl_unlock();
 		return ret;
