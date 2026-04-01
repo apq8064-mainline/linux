@@ -132,129 +132,101 @@
 			#interrupt-cells = <2>;
 
 			i2c1_default_state: i2c1-default-state {
-				i2c1-pins {
-					pins = "gpio8", "gpio9";
-					function = "gsbi1";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio8", "gpio9";
+				function = "gsbi1";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c1_sleep_state: i2c1-sleep-state {
-				i2c1-pins {
-					pins = "gpio8", "gpio9";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio8", "gpio9";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c2_default_state: i2c2-default-state {
-				i2c2-pins {
-					pins = "gpio12", "gpio13";
-					function = "gsbi2";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio12", "gpio13";
+				function = "gsbi2";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c2_sleep_state: i2c2-sleep-state {
-				i2c2-pins {
-					pins = "gpio12", "gpio13";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio12", "gpio13";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c3_default_state: i2c3-default-state {
-				i2c3-pins {
-					pins = "gpio16", "gpio17";
-					function = "gsbi3";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio16", "gpio17";
+				function = "gsbi3";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c3_sleep_state: i2c3-sleep-state {
-				i2c3-pins {
-					pins = "gpio16", "gpio17";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio16", "gpio17";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c7_default_state: i2c7-default-state {
-				i2c7-pins {
-					pins = "gpio32", "gpio33";
-					function = "gsbi7";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio32", "gpio33";
+				function = "gsbi7";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c7_sleep_state: i2c7-sleep-state {
-				i2c7-pins {
-					pins = "gpio32", "gpio33";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio32", "gpio33";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c8_default_state: i2c8-default-state {
-				i2c8-pins {
-					pins = "gpio36", "gpio37";
-					function = "gsbi8";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio36", "gpio37";
+				function = "gsbi8";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c8_sleep_state: i2c8-sleep-state {
-				i2c8-pins {
-					pins = "gpio36", "gpio37";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio36", "gpio37";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c10_default_state: i2c10-default-state {
-				i2c10-pins {
-					pins = "gpio73", "gpio74";
-					function = "gsbi10";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio73", "gpio74";
+				function = "gsbi10";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c10_sleep_state: i2c10-sleep-state {
-				i2c10-pins {
-					pins = "gpio73", "gpio74";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio73", "gpio74";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			i2c12_default_state: i2c12-default-state {
-				i2c12-pins {
-					pins = "gpio44", "gpio45";
-					function = "gsbi12";
-					drive-strength = <8>;
-					bias-disable;
-				};
+				pins = "gpio44", "gpio45";
+				function = "gsbi12";
+				drive-strength = <8>;
+				bias-disable;
 			};
 
 			i2c12_sleep_state: i2c12-sleep-state {
-				i2c12-pins {
-					pins = "gpio44", "gpio45";
-					function = "gpio";
-					drive-strength = <2>;
-					bias-bus-hold;
-				};
+				pins = "gpio44", "gpio45";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
 			};
 
 			sdcc3_default_state: sdcc3-default-state {
