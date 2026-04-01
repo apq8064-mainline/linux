@@ -173,6 +173,20 @@
 				bias-bus-hold;
 			};
 
+			i2c5_default_state: i2c5-default-state {
+				pins = "gpio24", "gpio25";
+				function = "gsbi5";
+				drive-strength = <8>;
+				bias-disable;
+			};
+
+			i2c5_sleep_state: i2c5-sleep-state {
+				pins = "gpio24", "gpio25";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-bus-hold;
+			};
+
 			i2c7_default_state: i2c7-default-state {
 				pins = "gpio32", "gpio33";
 				function = "gsbi7";
@@ -633,6 +647,23 @@
 					 <&gcc GSBI5_H_CLK>;
 				clock-names = "core",
 					      "iface";
+
+				status = "disabled";
+			};
+
+			gsbi5_i2c: i2c@16480000 {
+				compatible = "qcom,i2c-qup-v1.1.1";
+				reg = <0x16480000 0x1000>;
+				pinctrl-0 = <&i2c5_default_state>;
+				pinctrl-1 = <&i2c5_sleep_state>;
+				pinctrl-names = "default", "sleep";
+				interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&gcc GSBI5_QUP_CLK>,
+					 <&gcc GSBI5_H_CLK>;
+				clock-names = "core",
+					      "iface";
+				#address-cells = <1>;
+				#size-cells = <0>;
 
 				status = "disabled";
 			};
