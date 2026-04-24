@@ -1033,6 +1033,7 @@
 
 		gpu: gpu@4300000 {
 			compatible = "qcom,adreno-320.2", "qcom,adreno";
+			#cooling-cells = <2>;
 			reg = <0x04300000 0x20000>;
 			reg-names = "kgsl_3d0_reg_memory";
 			interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
