@@ -81,7 +81,7 @@ patternProperties:
       required-opps: true
 
     patternProperties:
-      '^opp-microvolt-speed[0-9]+-pvs[0-9]+$': true
+      '^opp-microvolt-speed[0-9]+-pvs[0-9]+(-v[0-9]+)?$': true
 
     required:
       - opp-hz
