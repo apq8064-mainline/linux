@@ -204,8 +204,15 @@ static const struct of_device_id qcom_usb_extcon_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, qcom_usb_extcon_dt_match);
 
+static const struct platform_device_id qcom_usb_extcon_id[] = {
+	{ "qcom-pm8xxx-usb-id" },
+	{ }
+};
+MODULE_DEVICE_TABLE(platform, qcom_usb_extcon_id);
+
 static struct platform_driver qcom_usb_extcon_driver = {
 	.probe		= qcom_usb_extcon_probe,
+	.id_table	= qcom_usb_extcon_id,
 	.driver		= {
 		.name	= "extcon-pm8941-misc",
 		.pm	= &qcom_usb_extcon_pm_ops,
