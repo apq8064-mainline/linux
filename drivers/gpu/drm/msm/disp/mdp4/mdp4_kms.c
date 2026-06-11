@@ -118,6 +118,39 @@ static long mdp4_round_pixclk(struct msm_kms *kms, unsigned long rate,
 	}
 }
 
+void mdp4_crtc_bus_get(struct mdp4_kms *mdp4_kms)
+{
+	int ret = 0;
+
+	mutex_lock(&mdp4_kms->clock_lock);
+
+	if (!mdp4_kms->crtc_bus_count)
+		ret = clk_prepare_enable(mdp4_kms->axi_clk);
+
+	if (!ret)
+		mdp4_kms->crtc_bus_count++;
+
+	mutex_unlock(&mdp4_kms->clock_lock);
+
+	WARN_ON(ret);
+}
+
+void mdp4_crtc_bus_put(struct mdp4_kms *mdp4_kms)
+{
+	mutex_lock(&mdp4_kms->clock_lock);
+	if (!mdp4_kms->crtc_bus_count)
+		goto unlock;
+
+	mdp4_kms->crtc_bus_count--;
+	if (mdp4_kms->crtc_bus_count)
+		goto unlock;
+
+	clk_disable_unprepare(mdp4_kms->axi_clk);
+
+unlock:
+	mutex_unlock(&mdp4_kms->clock_lock);
+}
+
 static void mdp4_destroy(struct msm_kms *kms)
 {
 	struct mdp4_kms *mdp4_kms = to_mdp4_kms(to_mdp_kms(kms));
@@ -136,6 +169,13 @@ static void mdp4_destroy(struct msm_kms *kms)
 
 	if (mdp4_kms->rpm_enabled)
 		pm_runtime_disable(dev);
+
+	mutex_lock(&mdp4_kms->clock_lock);
+	if (mdp4_kms->crtc_bus_count) {
+		clk_disable_unprepare(mdp4_kms->axi_clk);
+		mdp4_kms->crtc_bus_count = 0;
+	}
+	mutex_unlock(&mdp4_kms->clock_lock);
 
 	mdp_kms_destroy(&mdp4_kms->base);
 }
@@ -513,6 +553,8 @@ static int mdp4_probe(struct platform_device *pdev)
 	mdp4_kms = devm_kzalloc(dev, sizeof(*mdp4_kms), GFP_KERNEL);
 	if (!mdp4_kms)
 		return -ENOMEM;
+
+	mutex_init(&mdp4_kms->clock_lock);
 
 	mdp4_kms->mmio = msm_ioremap(pdev, NULL);
 	if (IS_ERR(mdp4_kms->mmio))

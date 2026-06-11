@@ -7,6 +7,8 @@
 #ifndef __MDP4_KMS_H__
 #define __MDP4_KMS_H__
 
+#include <linux/mutex.h>
+
 #include <drm/drm_panel.h>
 
 #include "msm_drv.h"
@@ -31,6 +33,8 @@ struct mdp4_kms {
 	struct clk *pclk;
 	struct clk *lut_clk;
 	struct clk *axi_clk;
+	struct mutex clock_lock;
+	unsigned int crtc_bus_count;
 
 	struct mdp_irq error_handler;
 
@@ -148,6 +152,8 @@ static inline uint32_t mixercfg(uint32_t mixer_cfg, int mixer,
 
 int mdp4_disable(struct mdp4_kms *mdp4_kms);
 int mdp4_enable(struct mdp4_kms *mdp4_kms);
+void mdp4_crtc_bus_get(struct mdp4_kms *mdp4_kms);
+void mdp4_crtc_bus_put(struct mdp4_kms *mdp4_kms);
 
 void mdp4_set_irqmask(struct mdp_kms *mdp_kms, uint32_t irqmask,
 		uint32_t old_irqmask);
