@@ -271,6 +271,7 @@ static void mdp4_crtc_atomic_disable(struct drm_crtc *crtc,
 
 	mdp_irq_unregister(&mdp4_kms->base, &mdp4_crtc->err);
 	mdp4_disable(mdp4_kms);
+	mdp4_crtc_bus_put(mdp4_kms);
 
 	if (crtc->state->event && !crtc->state->active) {
 		WARN_ON(mdp4_crtc->event);
@@ -295,6 +296,7 @@ static void mdp4_crtc_atomic_enable(struct drm_crtc *crtc,
 		return;
 
 	mdp4_enable(mdp4_kms);
+	mdp4_crtc_bus_get(mdp4_kms);
 
 	/* Restore vblank irq handling after power is enabled */
 	drm_crtc_vblank_on(crtc);
