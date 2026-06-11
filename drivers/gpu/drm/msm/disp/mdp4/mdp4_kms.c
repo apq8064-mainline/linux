@@ -151,6 +151,58 @@ unlock:
 	mutex_unlock(&mdp4_kms->clock_lock);
 }
 
+static bool mdp4_has_inherited_display_state(struct mdp4_kms *mdp4_kms)
+{
+	return mdp4_read(mdp4_kms, REG_MDP4_DSI_ENABLE) ||
+	       mdp4_read(mdp4_kms, REG_MDP4_LCDC_ENABLE) ||
+	       mdp4_read(mdp4_kms, REG_MDP4_DTV_ENABLE);
+}
+
+/*
+ * If firmware left MDP4 scanout enabled, preserve the core/LUT clocks until
+ * the first DRM CRTC enable takes ownership of the display pipeline.
+ */
+static void mdp4_inherited_display_clocks_get(struct mdp4_kms *mdp4_kms)
+{
+	bool inherited_display;
+
+	mutex_lock(&mdp4_kms->clock_lock);
+
+	clk_prepare_enable(mdp4_kms->clk);
+	clk_prepare_enable(mdp4_kms->pclk);
+	clk_prepare_enable(mdp4_kms->lut_clk);
+	clk_prepare_enable(mdp4_kms->axi_clk);
+
+	inherited_display = mdp4_has_inherited_display_state(mdp4_kms);
+
+	if (inherited_display) {
+		clk_prepare_enable(mdp4_kms->clk);
+		clk_prepare_enable(mdp4_kms->lut_clk);
+		mdp4_kms->inherited_display_clocks_held = true;
+	}
+
+	clk_disable_unprepare(mdp4_kms->clk);
+	clk_disable_unprepare(mdp4_kms->pclk);
+	clk_disable_unprepare(mdp4_kms->lut_clk);
+	clk_disable_unprepare(mdp4_kms->axi_clk);
+
+	mutex_unlock(&mdp4_kms->clock_lock);
+}
+
+void mdp4_inherited_display_clocks_put(struct mdp4_kms *mdp4_kms)
+{
+	mutex_lock(&mdp4_kms->clock_lock);
+	if (!mdp4_kms->inherited_display_clocks_held)
+		goto unlock;
+
+	clk_disable_unprepare(mdp4_kms->clk);
+	clk_disable_unprepare(mdp4_kms->lut_clk);
+	mdp4_kms->inherited_display_clocks_held = false;
+
+unlock:
+	mutex_unlock(&mdp4_kms->clock_lock);
+}
+
 static void mdp4_destroy(struct msm_kms *kms)
 {
 	struct mdp4_kms *mdp4_kms = to_mdp4_kms(to_mdp_kms(kms));
@@ -171,6 +223,11 @@ static void mdp4_destroy(struct msm_kms *kms)
 		pm_runtime_disable(dev);
 
 	mutex_lock(&mdp4_kms->clock_lock);
+	if (mdp4_kms->inherited_display_clocks_held) {
+		clk_disable_unprepare(mdp4_kms->clk);
+		clk_disable_unprepare(mdp4_kms->lut_clk);
+		mdp4_kms->inherited_display_clocks_held = false;
+	}
 	if (mdp4_kms->crtc_bus_count) {
 		clk_disable_unprepare(mdp4_kms->axi_clk);
 		mdp4_kms->crtc_bus_count = 0;
@@ -549,6 +606,7 @@ static int mdp4_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct mdp4_kms *mdp4_kms;
 	int irq;
+	int ret;
 
 	mdp4_kms = devm_kzalloc(dev, sizeof(*mdp4_kms), GFP_KERNEL);
 	if (!mdp4_kms)
@@ -594,7 +652,13 @@ static int mdp4_probe(struct platform_device *pdev)
 	if (IS_ERR(mdp4_kms->lut_clk))
 		return dev_err_probe(dev, PTR_ERR(mdp4_kms->lut_clk), "failed to get lut_clk\n");
 
-	return msm_drv_probe(&pdev->dev, mdp4_kms_init, &mdp4_kms->base.base);
+	mdp4_inherited_display_clocks_get(mdp4_kms);
+
+	ret = msm_drv_probe(&pdev->dev, mdp4_kms_init, &mdp4_kms->base.base);
+	if (ret)
+		mdp4_inherited_display_clocks_put(mdp4_kms);
+
+	return ret;
 }
 
 static void mdp4_remove(struct platform_device *pdev)

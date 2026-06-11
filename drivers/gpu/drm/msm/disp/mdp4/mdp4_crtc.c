@@ -297,6 +297,7 @@ static void mdp4_crtc_atomic_enable(struct drm_crtc *crtc,
 
 	mdp4_enable(mdp4_kms);
 	mdp4_crtc_bus_get(mdp4_kms);
+	mdp4_inherited_display_clocks_put(mdp4_kms);
 
 	/* Restore vblank irq handling after power is enabled */
 	drm_crtc_vblank_on(crtc);
