@@ -34,6 +34,7 @@ struct mdp4_kms {
 	struct clk *lut_clk;
 	struct clk *axi_clk;
 	struct mutex clock_lock;
+	bool inherited_display_clocks_held;
 	unsigned int crtc_bus_count;
 
 	struct mdp_irq error_handler;
@@ -152,6 +153,7 @@ static inline uint32_t mixercfg(uint32_t mixer_cfg, int mixer,
 
 int mdp4_disable(struct mdp4_kms *mdp4_kms);
 int mdp4_enable(struct mdp4_kms *mdp4_kms);
+void mdp4_inherited_display_clocks_put(struct mdp4_kms *mdp4_kms);
 void mdp4_crtc_bus_get(struct mdp4_kms *mdp4_kms);
 void mdp4_crtc_bus_put(struct mdp4_kms *mdp4_kms);
 
