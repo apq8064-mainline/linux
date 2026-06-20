@@ -157,13 +157,13 @@ static int jdi_panel_prepare(struct drm_panel *panel)
 	msleep(20);
 
 	gpiod_set_value(jdi->dcdc_en_gpio, 1);
-	usleep_range(10, 20);
+	msleep(20);
 
 	gpiod_set_value(jdi->reset_gpio, 0);
-	usleep_range(10, 20);
+	msleep(20);
 
 	gpiod_set_value(jdi->enable_gpio, 1);
-	usleep_range(10, 20);
+	msleep(20);
 
 	ret = jdi_panel_init(jdi);
 	if (ret < 0) {
@@ -246,13 +246,9 @@ static int dsi_dcs_bl_get_brightness(struct backlight_device *bl)
 	int ret;
 	u16 brightness = bl->props.brightness;
 
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-
 	ret = mipi_dsi_dcs_get_display_brightness(dsi, &brightness);
 	if (ret < 0)
 		return ret;
-
-	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
 	return brightness & 0xff;
 }
@@ -262,13 +258,9 @@ static int dsi_dcs_bl_update_status(struct backlight_device *bl)
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
 	int ret;
 
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-
 	ret = mipi_dsi_dcs_set_display_brightness(dsi, bl->props.brightness);
 	if (ret < 0)
 		return ret;
-
-	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
 	return 0;
 }
@@ -371,6 +363,8 @@ static int jdi_panel_probe(struct mipi_dsi_device *dsi)
 
 	if (IS_ERR(jdi))
 		return PTR_ERR(jdi);
+
+	jdi->base.prepare_prev_first = true;
 
 	mipi_dsi_set_drvdata(dsi, jdi);
 
