@@ -336,8 +336,20 @@ static void msm_iommu_domain_free(struct iommu_domain *domain)
 	spin_unlock_irqrestore(&msm_iommu_lock, flags);
 }
 
+static struct msm_iommu_dev *find_iommu_for_dev(struct device *dev);
+
 static int msm_iommu_domain_config(struct msm_priv *priv)
 {
+	struct msm_iommu_dev *iommu;
+	struct device *iommu_dev = priv->dev;
+	unsigned long flags;
+
+	spin_lock_irqsave(&msm_iommu_lock, flags);
+	iommu = find_iommu_for_dev(priv->dev);
+	if (iommu)
+		iommu_dev = iommu->dev;
+	spin_unlock_irqrestore(&msm_iommu_lock, flags);
+
 	spin_lock_init(&priv->pgtlock);
 
 	priv->cfg = (struct io_pgtable_cfg) {
@@ -345,7 +357,7 @@ static int msm_iommu_domain_config(struct msm_priv *priv)
 		.ias = 32,
 		.oas = 32,
 		.tlb = &msm_iommu_flush_ops,
-		.iommu_dev = priv->dev,
+		.iommu_dev = iommu_dev,
 	};
 
 	priv->iop = alloc_io_pgtable_ops(ARM_V7S, &priv->cfg, priv);
@@ -816,3 +828,4 @@ static struct platform_driver msm_iommu_driver = {
 	.probe		= msm_iommu_probe,
 };
 builtin_platform_driver(msm_iommu_driver);
+

@@ -11,6 +11,14 @@
 #include "msm_gpu_trace.h"
 #include "msm_mmu.h"
 
+#if defined(CONFIG_ARM_DMA_USE_IOMMU)
+#include <asm/dma-iommu.h>
+#else
+#define arm_iommu_detach_device(...)	({ })
+#define arm_iommu_release_mapping(...)	({ })
+#define to_dma_iommu_mapping(dev) NULL
+#endif
+
 struct msm_iommu {
 	struct msm_mmu base;
 	struct iommu_domain *domain;
@@ -748,6 +756,15 @@ struct msm_mmu *msm_iommu_new(struct device *dev, unsigned long quirks)
 	msm_mmu_init(&iommu->base, dev, &funcs, MSM_MMU_IOMMU);
 
 	mutex_init(&iommu->init_lock);
+
+	if (IS_ENABLED(CONFIG_ARM_DMA_USE_IOMMU)) {
+		struct dma_iommu_mapping *mapping = to_dma_iommu_mapping(dev);
+
+		if (mapping) {
+			arm_iommu_detach_device(dev);
+			arm_iommu_release_mapping(mapping);
+		}
+	}
 
 	ret = iommu_attach_device(iommu->domain, dev);
 	if (ret) {
