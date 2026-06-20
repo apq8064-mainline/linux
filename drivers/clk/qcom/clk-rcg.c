@@ -607,7 +607,7 @@ static const struct frac_entry pixel_table[] = {
 static int clk_rcg_pixel_determine_rate(struct clk_hw *hw,
 		struct clk_rate_request *req)
 {
-	int delta = 100000;
+	int delta = 500000;
 	const struct frac_entry *frac = pixel_table;
 	unsigned long request, src_rate;
 
@@ -632,7 +632,7 @@ static int clk_rcg_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
 				unsigned long parent_rate)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
-	int delta = 100000;
+	int delta = 500000;
 	const struct frac_entry *frac = pixel_table;
 	unsigned long request;
 	struct freq_tbl f = { 0 };
@@ -663,8 +663,13 @@ static int clk_rcg_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
 			(parent_rate > (request + delta)))
 			continue;
 
-		f.m = frac->num;
-		f.n = frac->den;
+		if (frac->num == frac->den) {
+			f.m = 0;
+			f.n = 0;
+		} else {
+			f.m = frac->num;
+			f.n = frac->den;
+		}
 
 		return __clk_rcg_set_rate(rcg, &f);
 	}
