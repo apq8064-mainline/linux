@@ -236,6 +236,13 @@
 		};
 	};
 
+	touch_pins: touch-pins {
+		pins = "gpio6";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
 	ps_hold_default_state: ps-hold-default-state {
 		pins = "gpio78";
 		function = "ps_hold";

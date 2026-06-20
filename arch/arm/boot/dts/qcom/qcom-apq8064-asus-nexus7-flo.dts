@@ -151,11 +151,19 @@
 	clock-frequency = <200000>;
 	status = "okay";
 
-	trackpad@10 {
+	touchscreen@10 {
 		compatible = "elan,ekth3500";
 		reg = <0x10>;
 		interrupt-parent = <&tlmm_pinmux>;
 		interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
+		vcc33-supply = <&ext_3p3v>;
+		vccio-supply = <&pm8921_lvs7>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_pins>;
+		touchscreen-size-x = <2240>;
+		touchscreen-size-y = <1350>;
+		touchscreen-swapped-x-y;
+		touchscreen-inverted-x;
 	};
 };
 

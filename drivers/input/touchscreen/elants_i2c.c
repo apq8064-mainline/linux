@@ -1112,14 +1112,15 @@ static irqreturn_t elants_i2c_irq(int irq, void *_dev)
 
 		case QUEUE_HEADER_NORMAL2: /* CMD_HEADER_REK */
 			/*
-			 * Depending on firmware version, eKTF3624 touchscreens
+			 * Depending on firmware version, touchscreens
 			 * may utilize one of these opcodes for the touch events:
 			 * 0x63 (NORMAL) and 0x66 (NORMAL2).  The 0x63 is used by
 			 * older firmware version and differs from 0x66 such that
 			 * touch pressure value needs to be adjusted.  The 0x66
 			 * opcode of newer firmware is equal to 0x63 of eKTH3500.
+			 * Some EKTH3500 firmwares also use 0x66 for touch events.
 			 */
-			if (ts->chip_id != EKTF3624)
+			if (ts->chip_id != EKTF3624 && ts->chip_id != EKTH3500)
 				break;
 
 			fallthrough;
@@ -1306,13 +1307,6 @@ static int elants_i2c_power_on(struct elants_data *ts)
 {
 	int error;
 
-	/*
-	 * If we do not have reset gpio assume platform firmware
-	 * controls regulators and does power them on for us.
-	 */
-	if (IS_ERR_OR_NULL(ts->reset_gpio))
-		return 0;
-
 	error = regulator_enable(ts->vcc33);
 	if (error) {
 		dev_err(&ts->client->dev,
@@ -1329,6 +1323,9 @@ static int elants_i2c_power_on(struct elants_data *ts)
 		regulator_disable(ts->vcc33);
 		return error;
 	}
+
+	if (IS_ERR_OR_NULL(ts->reset_gpio))
+		return 0;
 
 	/*
 	 * We need to wait a bit after powering on controller before
@@ -1353,9 +1350,9 @@ static void elants_i2c_power_off(void *_data)
 		 * pin once we shut off power to the controller.
 		 */
 		gpiod_set_value_cansleep(ts->reset_gpio, 1);
-		regulator_disable(ts->vccio);
-		regulator_disable(ts->vcc33);
 	}
+	regulator_disable(ts->vccio);
+	regulator_disable(ts->vcc33);
 }
 
 #ifdef CONFIG_ACPI
