@@ -107,20 +107,19 @@ static int dsi_pll_28nm_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 	writel(fb_divider & 0xff, base + REG_DSI_28nm_8960_PHY_PLL_CTRL_1);
 
 	val = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_2);
-
+	val &= ~0x07;
 	val |= (fb_divider >> 8) & 0x07;
-
 	writel(val, base + REG_DSI_28nm_8960_PHY_PLL_CTRL_2);
 
 	val = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_3);
-
+	val &= ~0x3f;
 	val |= (VCO_PREF_DIV_RATIO - 1) & 0x3f;
-
 	writel(val, base + REG_DSI_28nm_8960_PHY_PLL_CTRL_3);
 
 	writel(0xf, base + REG_DSI_28nm_8960_PHY_PLL_CTRL_6);
 
 	val = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_8);
+	val &= ~(0x7 << 4);
 	val |= 0x7 << 4;
 	writel(val, base + REG_DSI_28nm_8960_PHY_PLL_CTRL_8);
 
@@ -141,28 +140,22 @@ static unsigned long dsi_pll_28nm_clk_recalc_rate(struct clk_hw *hw,
 	struct dsi_pll_28nm *pll_28nm = to_pll_28nm(hw);
 	void __iomem *base = pll_28nm->phy->pll_base;
 	unsigned long vco_rate;
-	u32 status, fb_divider, temp, ref_divider;
+	u32 fb_divider, temp, ref_divider;
 
 	VERB("parent_rate=%lu", parent_rate);
 
-	status = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_0);
+	fb_divider = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_1);
+	fb_divider &= 0xff;
+	temp = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_2) & 0x07;
+	fb_divider = (temp << 8) | fb_divider;
+	fb_divider += 1;
 
-	if (status & DSI_28nm_8960_PHY_PLL_CTRL_0_ENABLE) {
-		fb_divider = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_1);
-		fb_divider &= 0xff;
-		temp = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_2) & 0x07;
-		fb_divider = (temp << 8) | fb_divider;
-		fb_divider += 1;
+	ref_divider = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_3);
+	ref_divider &= 0x3f;
+	ref_divider += 1;
 
-		ref_divider = readl(base + REG_DSI_28nm_8960_PHY_PLL_CTRL_3);
-		ref_divider &= 0x3f;
-		ref_divider += 1;
-
-		/* multiply by 2 */
-		vco_rate = (parent_rate / ref_divider) * fb_divider * 2;
-	} else {
-		vco_rate = 0;
-	}
+	/* multiply by 2 */
+	vco_rate = (parent_rate / ref_divider) * fb_divider * 2;
 
 	DBG("returning vco rate = %lu", vco_rate);
 
@@ -320,6 +313,7 @@ static int clk_bytediv_set_rate(struct clk_hw *hw, unsigned long rate,
 	factor = get_vco_mul_factor(rate);
 
 	val = readl(bytediv->reg);
+	val &= ~0xff;
 	val |= (factor - 1) & 0xff;
 	writel(val, bytediv->reg);
 
