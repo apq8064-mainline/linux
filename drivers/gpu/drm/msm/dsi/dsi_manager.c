@@ -248,6 +248,9 @@ static int dsi_mgr_bridge_power_on(struct drm_bridge *bridge)
 	if (is_bonded_dsi && msm_dsi1)
 		msm_dsi_host_enable_irq(msm_dsi1->host);
 
+	/* Allow DSI clock/data lanes to stabilize in LP-11 state */
+	msleep(20);
+
 	return 0;
 
 host1_on_fail:
