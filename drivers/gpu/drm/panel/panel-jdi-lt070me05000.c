@@ -38,6 +38,7 @@ struct jdi_panel {
 	struct backlight_device *backlight;
 
 	const struct drm_display_mode *mode;
+	bool supplies_enabled;
 };
 
 static inline struct jdi_panel *to_jdi_panel(struct drm_panel *panel)
@@ -102,7 +103,7 @@ static void jdi_panel_off(struct jdi_panel *jdi)
 	struct mipi_dsi_device *dsi = jdi->dsi;
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = dsi };
 
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
 	mipi_dsi_dcs_set_display_off_multi(&dsi_ctx);
 	/* Reset error to continue power-down even if display off failed */
@@ -129,9 +130,12 @@ static int jdi_panel_unprepare(struct drm_panel *panel)
 
 	jdi_panel_off(jdi);
 
-	ret = regulator_bulk_disable(ARRAY_SIZE(jdi->supplies), jdi->supplies);
-	if (ret < 0)
-		dev_err(dev, "regulator disable failed, %d\n", ret);
+	if (jdi->supplies_enabled) {
+		ret = regulator_bulk_disable(ARRAY_SIZE(jdi->supplies), jdi->supplies);
+		if (ret < 0)
+			dev_err(dev, "regulator disable failed, %d\n", ret);
+		jdi->supplies_enabled = false;
+	}
 
 	gpiod_set_value(jdi->enable_gpio, 0);
 
@@ -153,17 +157,18 @@ static int jdi_panel_prepare(struct drm_panel *panel)
 		dev_err(dev, "regulator enable failed, %d\n", ret);
 		return ret;
 	}
+	jdi->supplies_enabled = true;
 
-	msleep(20);
+	msleep(50);
 
 	gpiod_set_value(jdi->dcdc_en_gpio, 1);
-	msleep(20);
+	msleep(50);
 
 	gpiod_set_value(jdi->reset_gpio, 0);
-	msleep(20);
+	msleep(120);
 
 	gpiod_set_value(jdi->enable_gpio, 1);
-	msleep(20);
+	msleep(50);
 
 	ret = jdi_panel_init(jdi);
 	if (ret < 0) {
@@ -180,9 +185,12 @@ static int jdi_panel_prepare(struct drm_panel *panel)
 	return 0;
 
 poweroff:
-	ret = regulator_bulk_disable(ARRAY_SIZE(jdi->supplies), jdi->supplies);
-	if (ret < 0)
-		dev_err(dev, "regulator disable failed, %d\n", ret);
+	if (jdi->supplies_enabled) {
+		ret = regulator_bulk_disable(ARRAY_SIZE(jdi->supplies), jdi->supplies);
+		if (ret < 0)
+			dev_err(dev, "regulator disable failed, %d\n", ret);
+		jdi->supplies_enabled = false;
+	}
 
 	gpiod_set_value(jdi->enable_gpio, 0);
 

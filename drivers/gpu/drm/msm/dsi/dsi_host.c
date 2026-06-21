@@ -1168,8 +1168,10 @@ static void dsi_op_mode_config(struct msm_dsi_host *msm_host,
 					DSI_IRQ_MASK_VIDEO_DONE, 0);
 	} else {
 		if (video_mode) {
+			dsi_ctrl &= ~DSI_CTRL_CMD_MODE_EN;
 			dsi_ctrl |= DSI_CTRL_VID_MODE_EN;
 		} else {		/* command mode */
+			dsi_ctrl &= ~DSI_CTRL_VID_MODE_EN;
 			dsi_ctrl |= DSI_CTRL_CMD_MODE_EN;
 			dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_CMD_MDP_DONE, 1);
 		}
@@ -2178,11 +2180,21 @@ int msm_dsi_host_xfer_prepare(struct mipi_dsi_host *host,
 	if (!(msg->flags & MIPI_DSI_MSG_USE_LPM))
 		dsi_set_tx_power_mode(0, msm_host);
 
+	u32 val;
+
 	msm_host->dma_cmd_ctrl_restore = dsi_read(msm_host, REG_DSI_CTRL);
-	dsi_write(msm_host, REG_DSI_CTRL,
-		msm_host->dma_cmd_ctrl_restore |
-		DSI_CTRL_CMD_MODE_EN |
-		DSI_CTRL_ENABLE);
+	val = msm_host->dma_cmd_ctrl_restore | DSI_CTRL_CMD_MODE_EN | DSI_CTRL_ENABLE;
+
+	/* If the video engine is not actively running, temporarily disable video mode
+	 * during this command transfer to prevent DMA from stalling/timing out waiting for BLLP.
+	 */
+	if (msm_host->mode_flags & MIPI_DSI_MODE_VIDEO) {
+		u32 status = dsi_read(msm_host, REG_DSI_STATUS0);
+		if (!(status & DSI_STATUS0_VIDEO_MODE_ENGINE_BUSY))
+			val &= ~DSI_CTRL_VID_MODE_EN;
+	}
+
+	dsi_write(msm_host, REG_DSI_CTRL, val);
 	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_CMD_DMA_DONE, 1);
 
 	return 0;
