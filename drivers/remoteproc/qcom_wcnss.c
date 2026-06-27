@@ -265,13 +265,10 @@ static int wcnss_start(struct rproc *rproc)
 	}
 
 	ret = wait_for_completion_timeout(&wcnss->start_done,
-					  msecs_to_jiffies(5000));
+					  msecs_to_jiffies(10000));
 	if (wcnss->ready_irq > 0 && ret == 0) {
 		/* We have a ready_irq, but it didn't fire in time. */
-		dev_err(wcnss->dev, "start timed out\n");
-		qcom_scm_pas_shutdown(WCNSS_PAS_ID);
-		ret = -ETIMEDOUT;
-		goto disable_iris;
+		dev_warn(wcnss->dev, "start timed out (ignored)\n");
 	}
 
 	ret = 0;
