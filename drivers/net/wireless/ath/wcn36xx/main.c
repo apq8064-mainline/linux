@@ -251,6 +251,8 @@ static int wcn36xx_start(struct ieee80211_hw *hw)
 			wcn36xx_feat_caps_info(wcn);
 	}
 
+	wcn36xx_firmware_clear_feat_caps(wcn->fw_feat_caps, SCAN_OFFLOAD);
+
 	/* DMA channel initialization */
 	ret = wcn36xx_dxe_init(wcn);
 	if (ret) {
