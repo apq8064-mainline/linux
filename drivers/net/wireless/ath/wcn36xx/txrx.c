@@ -388,6 +388,12 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
 		status.freq = 2412;
 	}
 
+	if (status.band == NL80211_BAND_5GHZ &&
+	    !wcn->hw->wiphy->bands[NL80211_BAND_5GHZ]) {
+		dev_kfree_skb_irq(skb);
+		return 0;
+	}
+
 	wcn36xx_update_survey(wcn, status.signal, get_snr(bd),
 			      status.band, status.freq);
 
