@@ -375,9 +375,12 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
 			status.band = NL80211_BAND_2GHZ;
 			status.freq = ieee80211_channel_to_frequency(hwch, status.band);
 		}
-	} else {
+	} else if (wcn->hw->conf.chandef.chan) {
 		status.band = WCN36XX_BAND(wcn);
 		status.freq = WCN36XX_CENTER_FREQ(wcn);
+	} else {
+		status.band = NL80211_BAND_2GHZ;
+		status.freq = 2412;
 	}
 
 	wcn36xx_update_survey(wcn, status.signal, get_snr(bd),
