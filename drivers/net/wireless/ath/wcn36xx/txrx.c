@@ -282,10 +282,15 @@ static void wcn36xx_update_survey(struct wcn36xx *wcn, int rssi, int snr,
 	u8 snr_sample = snr & 0xff;
 
 	idx = 0;
-	if (band == NL80211_BAND_5GHZ)
+	if (band == NL80211_BAND_5GHZ) {
+		if (!wcn->hw->wiphy->bands[NL80211_BAND_2GHZ])
+			return;
 		idx = wcn->hw->wiphy->bands[NL80211_BAND_2GHZ]->n_channels;
+	}
 
 	sband = wcn->hw->wiphy->bands[band];
+	if (!sband)
+		return;
 	channel = sband->channels;
 
 	for (i = 0; i < sband->n_channels; i++, channel++) {
