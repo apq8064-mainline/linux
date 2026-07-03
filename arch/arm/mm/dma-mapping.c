@@ -21,6 +21,9 @@
 #include <linux/slab.h>
 #include <linux/iommu.h>
 #include <linux/io.h>
+#include <linux/amba/bus.h>
+#include <linux/pci.h>
+#include <linux/platform_device.h>
 #include <linux/vmalloc.h>
 #include <linux/sizes.h>
 #include <linux/cma.h>
@@ -1698,6 +1701,25 @@ static void arm_teardown_iommu_dma_ops(struct device *dev) { }
 
 #endif	/* CONFIG_ARM_DMA_USE_IOMMU */
 
+static bool arm_dma_driver_managed(struct device *dev)
+{
+	struct device_driver *drv = READ_ONCE(dev->driver);
+
+	if (!drv)
+		return false;
+
+	if (dev_is_platform(dev))
+		return to_platform_driver(drv)->driver_managed_dma;
+
+	if (dev_is_amba(dev))
+		return container_of_const(drv, struct amba_driver, drv)->driver_managed_dma;
+
+	if (dev_is_pci(dev))
+		return to_pci_driver(drv)->driver_managed_dma;
+
+	return false;
+}
+
 void arch_setup_dma_ops(struct device *dev, bool coherent)
 {
 	/*
@@ -1717,7 +1739,7 @@ void arch_setup_dma_ops(struct device *dev, bool coherent)
 	if (dev->dma_ops)
 		return;
 
-	if (device_iommu_mapped(dev))
+	if (device_iommu_mapped(dev) && !arm_dma_driver_managed(dev))
 		arm_setup_iommu_dma_ops(dev);
 
 	xen_setup_dma_ops(dev);
