@@ -214,6 +214,19 @@ config GPIO_RASPBERRYPI_EXP
 	  Turn on GPIO support for the expander on Raspberry Pi 3 boards, using
 	  the firmware mailbox to communicate with VideoCore on BCM283x chips.
 
+config GPIO_SAMSUNG_ICE4
+	tristate "Samsung ICE4 FPGA GPIO expander"
+	depends on OF_GPIO
+	depends on GPIOLIB
+	depends on I2C
+	depends on MFD_PM8XXX
+	select I2C_ALGOBIT
+	select REGULATOR_QCOM_PM8917
+	help
+	  Say yes here to support the Samsung ICE4 FPGA GPIO expander used
+	  on some Samsung APQ8064 phones for board control signals such as
+	  Broadcom WiFi enable.
+
 config GPIO_BCM_KONA
 	bool "Broadcom Kona GPIO"
 	depends on ARCH_BCM_MOBILE || COMPILE_TEST

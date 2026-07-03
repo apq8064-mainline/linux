@@ -562,7 +562,7 @@ static const char * const gp_clk_0a_groups[] = {
 };
 
 static const char * const gp_clk_0b_groups[] = {
-	"gpio54"
+	"gpio34", "gpio54"
 };
 
 static const char * const gp_clk_1a_groups[] = {
@@ -1090,7 +1090,7 @@ static const struct msm_pingroup msm8960_groups[] = {
 	PINGROUP(31, gsbi7, usb_fs1_oe, usb_fs1_oe_n, NA, NA, NA, NA, NA, NA, NA, NA),
 	PINGROUP(32, gsbi7, usb_fs1, NA, NA, NA, NA, NA, NA, NA, NA, NA),
 	PINGROUP(33, gsbi7, usb_fs1, NA, NA, NA, NA, NA, NA, NA, NA, NA),
-	PINGROUP(34, gsbi8, usb_fs2, NA, NA, NA, NA, NA, NA, NA, NA, NA),
+	PINGROUP(34, gsbi8, gp_clk_0b, NA, NA, NA, NA, NA, NA, NA, NA, NA),
 	PINGROUP(35, gsbi8, usb_fs2, NA, NA, NA, NA, NA, NA, NA, NA, NA),
 	PINGROUP(36, gsbi8, usb_fs2_oe, usb_fs2_oe_n, gsbi11_spi_cs1a_n, NA, NA, NA, NA, NA, NA, NA),
 	PINGROUP(37, gsbi8, gps_pps_out, gps_pps_in, gsbi11_spi_cs2a_n, gp_clk_2b, NA, NA, NA, NA, NA, NA),
