@@ -797,6 +797,15 @@ config DRM_PANEL_SAMSUNG_AMS639RQ08
 	  Say Y or M here if you want to enable support for the
 	  Samsung AMS639RQ08 FHD Plus (2340x1080@60Hz) CMD mode panel.
 
+config DRM_PANEL_SAMSUNG_MAGNA_OCTA
+	tristate "Samsung Magna OCTA FHD panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	default y
+	help
+	  Say Y here if you want minimal bring-up support for the
+	  Samsung Magna OCTA Full HD panel.
+
 config DRM_PANEL_SAMSUNG_S6E88A0_AMS427AP24
 	tristate "Samsung AMS427AP24 panel with S6E88A0 controller"
 	depends on GPIOLIB && OF && REGULATOR
