@@ -446,10 +446,12 @@ static int pm8xxx_mpp_direction_input(struct gpio_chip *chip,
 {
 	struct pm8xxx_mpp *pctrl = gpiochip_get_data(chip);
 	struct pm8xxx_pin_data *pin = pctrl->desc.pins[offset].drv_data;
+	int ret;
 
 	switch (pin->mode) {
 	case PM8XXX_MPP_DIGITAL:
 		pin->input = true;
+		pin->output = false;
 		break;
 	case PM8XXX_MPP_ANALOG:
 		pin->input = true;
@@ -459,9 +461,7 @@ static int pm8xxx_mpp_direction_input(struct gpio_chip *chip,
 		return -EINVAL;
 	}
 
-	pm8xxx_mpp_update(pctrl, pin);
-
-	return 0;
+	return pm8xxx_mpp_update(pctrl, pin);
 }
 
 static int pm8xxx_mpp_direction_output(struct gpio_chip *chip,
@@ -470,9 +470,13 @@ static int pm8xxx_mpp_direction_output(struct gpio_chip *chip,
 {
 	struct pm8xxx_mpp *pctrl = gpiochip_get_data(chip);
 	struct pm8xxx_pin_data *pin = pctrl->desc.pins[offset].drv_data;
+	int ret;
+
+	pin->output_value = !!value;
 
 	switch (pin->mode) {
 	case PM8XXX_MPP_DIGITAL:
+		pin->input = false;
 		pin->output = true;
 		break;
 	case PM8XXX_MPP_ANALOG:
@@ -485,16 +489,17 @@ static int pm8xxx_mpp_direction_output(struct gpio_chip *chip,
 		break;
 	}
 
-	pm8xxx_mpp_update(pctrl, pin);
+	ret = pm8xxx_mpp_update(pctrl, pin);
 
-	return 0;
+	return ret;
 }
 
 static int pm8xxx_mpp_get(struct gpio_chip *chip, unsigned offset)
 {
 	struct pm8xxx_mpp *pctrl = gpiochip_get_data(chip);
 	struct pm8xxx_pin_data *pin = pctrl->desc.pins[offset].drv_data;
-	bool state;
+	static int ice4_get_log_count;
+	bool state = false;
 	int ret, irq;
 
 	if (!pin->input)

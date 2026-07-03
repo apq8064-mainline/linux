@@ -435,6 +435,30 @@ static void mmci_write_datactrlreg(struct mmci_host *host, u32 datactrl)
 }
 
 /*
+ * Qualcomm SDCC controllers with dual-voltage pads need the I/O pad
+ * power switch set when the SDIO I/O voltage is below 2.7 V.
+ * Use vqmmc-supply if present, otherwise fall back to vmmc-supply.
+ */
+static void mmci_qcom_update_io_pad_pwr_switch(struct mmci_host *host)
+{
+	struct mmc_host *mmc = host->mmc;
+	struct regulator *supply;
+	int uv;
+
+	if (!host->variant->qcom_fifo)
+		return;
+
+	supply = mmc->supply.vqmmc;
+	if (IS_ERR_OR_NULL(supply))
+		supply = mmc->supply.vmmc;
+	if (IS_ERR_OR_NULL(supply))
+		return;
+
+	uv = regulator_get_voltage(supply);
+	host->io_pad_pwr_switch = (uv > 0 && uv < 2700000);
+}
+
+/*
  * This must be called with host->lock held
  */
 static void mmci_set_clkreg(struct mmci_host *host, unsigned int desired)
@@ -477,6 +501,8 @@ static void mmci_set_clkreg(struct mmci_host *host, unsigned int desired)
 
 		clk |= variant->clkreg_enable;
 		clk |= MCI_CLK_ENABLE;
+		if (host->io_pad_pwr_switch)
+			clk |= MCI_QCOM_CLK_IO_PAD_PWR_SWITCH;
 		/* This hasn't proven to be worthwhile */
 		/* clk |= MCI_CLK_PWRSAVE; */
 	}
@@ -1929,7 +1955,7 @@ static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	struct variant_data *variant = host->variant;
 	u32 pwr = 0;
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 
 	switch (ios->power_mode) {
 	case MMC_POWER_OFF:
@@ -2064,6 +2090,8 @@ static int mmci_sig_volt_switch(struct mmc_host *mmc, struct mmc_ios *ios)
 
 	if (ret < 0)
 		dev_warn(mmc_dev(mmc), "Voltage switch failed\n");
+
+	mmci_qcom_update_io_pad_pwr_switch(host);
 
 	return ret;
 }
@@ -2208,6 +2236,7 @@ static int mmci_probe(struct amba_device *dev,
 	struct variant_data *variant = id->data;
 	struct mmci_host *host;
 	struct mmc_host *mmc;
+	u32 sdio_ocr_mask;
 	int ret;
 
 	/* Must have platform data or Device Tree. */
@@ -2234,6 +2263,11 @@ static int mmci_probe(struct amba_device *dev,
 	ret = mmci_of_parse(np, mmc);
 	if (ret)
 		return ret;
+
+	if (variant->qcom_fifo &&
+	    !device_property_read_u32(&dev->dev, "qcom,sdio-ocr-mask",
+				      &sdio_ocr_mask))
+		mmc->ocr_avail_sdio = sdio_ocr_mask;
 
 	/*
 	 * Some variant (STM32) doesn't have opendrain bit, nevertheless
@@ -2341,6 +2375,8 @@ static int mmci_probe(struct amba_device *dev,
 	ret = mmc_regulator_get_supply(mmc);
 	if (ret)
 		goto clk_disable;
+
+	mmci_qcom_update_io_pad_pwr_switch(host);
 
 	if (!mmc->ocr_avail)
 		mmc->ocr_avail = plat->ocr_mask;

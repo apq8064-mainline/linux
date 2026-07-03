@@ -18,13 +18,14 @@
 int mmc_send_io_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 {
 	struct mmc_command cmd = {};
-	int i, err = 0;
+	int i, err = 0, attempts = 0;
 
 	cmd.opcode = SD_IO_SEND_OP_COND;
 	cmd.arg = ocr;
 	cmd.flags = MMC_RSP_SPI_R4 | MMC_RSP_R4 | MMC_CMD_BCR;
 
 	for (i = 100; i; i--) {
+		attempts++;
 		err = mmc_wait_for_cmd(host, &cmd, MMC_CMD_RETRIES);
 		if (err)
 			break;
@@ -55,6 +56,10 @@ int mmc_send_io_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 
 	if (rocr)
 		*rocr = cmd.resp[mmc_host_is_spi(host) ? 1 : 0];
+
+	pr_info("%s: CMD5 arg 0x%08x attempts %d err %d resp 0x%08x\n",
+		mmc_hostname(host), ocr, attempts, err,
+		cmd.resp[mmc_host_is_spi(host) ? 1 : 0]);
 
 	return err;
 }

@@ -54,6 +54,7 @@
 /* select in latch data and command in */
 #define MCI_QCOM_CLK_SELECT_IN_FBCLK	BIT(15)
 #define MCI_QCOM_CLK_SELECT_IN_DDR_MODE	(BIT(14) | BIT(15))
+#define MCI_QCOM_CLK_IO_PAD_PWR_SWITCH	BIT(21)
 
 /* Modified on STM32 sdmmc */
 #define MCI_STM32_CLK_CLKDIV_MSK	GENMASK(9, 0)
@@ -434,6 +435,7 @@ struct mmci_host {
 	u32			busy_status;
 	u32			mask1_reg;
 	u8			vqmmc_enabled:1;
+	u8			io_pad_pwr_switch:1;
 	struct mmci_platform_data *plat;
 	struct mmc_host_ops	*mmc_ops;
 	struct mmci_host_ops	*ops;
