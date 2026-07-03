@@ -4,6 +4,7 @@
 #include <dt-bindings/mfd/qcom-rpm.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/pinctrl/qcom,pmic-mpp.h>
 
 #include "qcom-apq8064-v2.0.dtsi"
 #include "pm8821.dtsi"
@@ -16,6 +17,7 @@
 
 	aliases {
 		serial0 = &gsbi7_serial;
+		serial1 = &gsbi6_serial;
 	};
 
 	chosen {
@@ -38,8 +40,8 @@
 
 	gpio-keys {
 		compatible = "gpio-keys";
-		pinctrl-0 = <&gpio_keys_default>;
 		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_keys_default>;
 
 		key-home {
 			label = "Home";
@@ -63,6 +65,41 @@
 			debounce-interval = <5>;
 			linux,code = <KEY_VOLUMEDOWN>;
 			wakeup-source;
+		};
+	};
+
+	i2c-muic {
+		compatible = "i2c-gpio";
+ 		sda-gpios = <&tlmm_pinmux 22 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+  		scl-gpios = <&tlmm_pinmux 23 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <2>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		max77693: pmic@66 {
+			compatible = "maxim,max77693";
+			reg = <0x66>;
+			interrupt-parent = <&tlmm_pinmux>;
+			interrupts = <55 IRQ_TYPE_EDGE_FALLING>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&muic_int_default_state>;
+
+			muic: muic {
+				compatible = "maxim,max77693-muic";
+				safeout1-supply = <&esafeout1_reg>;
+				safeout2-supply = <&esafeout2_reg>;
+			};
+
+			regulators {
+				esafeout1_reg: ESAFEOUT1 {
+					regulator-name = "ESAFEOUT1";
+				};
+
+				esafeout2_reg: ESAFEOUT2 {
+					regulator-name = "ESAFEOUT2";
+				};
+			};
 		};
 	};
 
@@ -102,39 +139,76 @@
 		};
 	};
 
-	i2c-muic {
+	i2c-fg {
 		compatible = "i2c-gpio";
-		sda-gpios = <&tlmm_pinmux 22 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
-		scl-gpios = <&tlmm_pinmux 23 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&tlmm_pinmux 0 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&tlmm_pinmux 1 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 		i2c-gpio,delay-us = <2>;
 
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		max77693: pmic@66 {
-			compatible = "maxim,max77693";
-			reg = <0x66>;
+		fuel-gauge@36 {
+			compatible = "maxim,max17048";
+			reg = <0x36>;
 			interrupt-parent = <&tlmm_pinmux>;
-			interrupts = <55 IRQ_TYPE_EDGE_FALLING>;
-			pinctrl-0 = <&muic_int_default_state>;
-			pinctrl-names = "default";
-
-			muic: muic {
-				compatible = "maxim,max77693-muic";
-				safeout1-supply = <&esafeout1_reg>;
-				safeout2-supply = <&esafeout2_reg>;
-			};
-
-			regulators {
-				esafeout1_reg: ESAFEOUT1 {
-					regulator-name = "ESAFEOUT1";
-				};
-
-				esafeout2_reg: ESAFEOUT2 {
-					regulator-name = "ESAFEOUT2";
-				};
-			};
+			interrupts = <29 IRQ_TYPE_EDGE_FALLING>;
+			power-supplies = <&muic>;
+			maxim,alert-low-soc-level = <4>;
+			maxim,double-soc;
+			maxim,rcomp = /bits/ 8 <0x88>;
+			wakeup-source;
 		};
+	};
+
+	ice4_gpio: gpio-controller {
+		compatible = "samsung,ice4-gpio";
+		scl-gpios = <&pm8921_mpps 9 GPIO_ACTIVE_HIGH>;
+		sda-gpios = <&pm8921_mpps 10 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ice4_mpp_state>, <&ice4_reset_state>,
+			    <&ice4_main_clk_state>;
+		creset-gpios = <&pm8921_gpio 9 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+		cdone-gpios = <&tlmm_pinmux 38 GPIO_ACTIVE_HIGH>;
+		vdd-supply = <&pm8921_l9>;
+		vio-supply = <&pm8921_lvs4>;
+		vcore-supply = <&pm8917_l33>;
+		clocks = <&gcc GP0_CLK>;
+		clock-names = "core";
+		firmware-name = "samsung/ice4.bin";
+		samsung,high-gpio-regs;
+
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
+
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&ice4_gpio 3 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <200>;
+		power-off-delay-us = <200000>;
+	};
+};
+
+&gsbi6 {
+	qcom,mode = <GSBI_PROT_UART_W_FC>;
+
+	status = "okay";
+};
+
+&gsbi6_serial {
+	uart-has-rtscts;
+	pinctrl-names = "default";
+	pinctrl-0 = <&gsbi6_uart_pin_a>;
+
+	status = "okay";
+
+	bluetooth {
+		compatible = "brcm,bcm4335a0";
+		max-speed = <3000000>;
+		shutdown-gpios = <&ice4_gpio 4 GPIO_ACTIVE_HIGH>;
+		device-wakeup-gpios = <&ice4_gpio 5 GPIO_ACTIVE_HIGH>;
 	};
 };
 
@@ -145,8 +219,8 @@
 };
 
 &gsbi7_serial {
-	pinctrl-0 = <&gsbi7_uart_pin_a>;
 	pinctrl-names = "default";
+	pinctrl-0 = <&gsbi7_uart_pin_a>;
 
 	status = "okay";
 };
@@ -157,24 +231,21 @@
 
 &pm8921 {
 	interrupts-extended = <&tlmm_pinmux 74 IRQ_TYPE_LEVEL_LOW>;
+
+	pm8917_l33: regulator-l33 {
+		compatible = "qcom,pm8917-l33";
+		regulator-name = "8917_l33";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+	};
 };
 
 &riva {
-	pinctrl-0 = <&riva_wlan_pin_a>, <&riva_bt_pin_a>, <&riva_fm_pin_a>;
-	pinctrl-names = "default";
+	status = "disabled";
+};
 
-	vddcx-supply = <&pm8921_s3>;
-	vddmx-supply = <&pm8921_l24>;
-	vddpx-supply = <&pm8921_s4>;
-
+&gpu {
 	status = "okay";
-
-	iris {
-		vddxo-supply = <&pm8921_l4>;
-		vddrfa-supply = <&pm8921_s2>;
-		vddpa-supply = <&pm8921_l10>;
-		vdddig-supply = <&pm8921_lvs2>;
-	};
 };
 
 &rpm {
@@ -254,7 +325,21 @@
 			bias-pull-down;
 		};
 
-		/* touch_vdd */
+		/* ice4_fpga-vdd */
+		pm8921_l9: l9 {
+			regulator-min-microvolt = <2850000>;
+			regulator-max-microvolt = <2850000>;
+			bias-pull-down;
+		};
+
+		/* touch_vdd (downstream Synaptics uses l17 at 3.3V) */
+		pm8921_l17: l17 {
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			bias-pull-down;
+		};
+
+		/* legacy comment kept for prior first-pass attempt */
 		pm8921_l15: l15 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <2950000>;
@@ -431,7 +516,137 @@
 	status = "okay";
 };
 
+&sdcc3 {
+	max-frequency = <48000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdcc3_default_state>;
+	bus-width = <4>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	non-removable;
+	qcom,sdio-ocr-mask = <0x00018080>;
+	/delete-property/ no-1-8-v;
+	vmmc-supply = <&pm8921_l4>;
+	/delete-property/ vqmmc-supply;
+
+	status = "okay";
+
+	wifi@1 {
+		reg = <1>;
+		compatible = "brcm,bcm4335-fmac", "brcm,bcm4329-fmac";
+		brcm,board-type = "samsung,jflte";
+	};
+};
+
+&gsbi3 {
+	qcom,mode = <GSBI_PROT_I2C>;
+	status = "okay";
+};
+
+&gsbi3_i2c {
+	clock-frequency = <200000>;
+	status = "okay";
+
+	touchscreen@20 {
+		compatible = "syna,rmi4-i2c";
+		reg = <0x20>;
+		interrupt-parent = <&tlmm_pinmux>;
+		interrupts = <67 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_irq_default_state>;
+		syna,startup-delay-ms = <100>;
+		vdd-supply = <&pm8921_l17>;
+		vio-supply = <&pm8921_l22>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		rmi4-f01@1 {
+			reg = <0x1>;
+		};
+
+		rmi4-f11@11 {
+			reg = <0x11>;
+			syna,sensor-type = <1>;
+		};
+
+		rmi4-f12@12 {
+			reg = <0x12>;
+			syna,sensor-type = <1>;
+			touchscreen-size-x = <1080>;
+			touchscreen-size-y = <1920>;
+		};
+
+		rmi4-f1a@1a {
+			reg = <0x1a>;
+			linux,keycodes = <KEY_MENU KEY_BACK>;
+		};
+	};
+};
+
+&mdp {
+	status = "okay";
+};
+
+&mdp_dsi1_out {
+	remote-endpoint = <&dsi0_in>;
+};
+
+&dsi0 {
+	vdda-supply = <&pm8921_l2>;
+	vdd-supply = <&pm8921_l8>;
+	vddio-supply = <&pm8921_lvs7>;
+	avdd-supply = <&pm8921_l11>;
+
+	status = "okay";
+
+	panel@0 {
+		reg = <0>;
+		compatible = "samsung,magna-octa-fhd";
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&dsi0_out>;
+			};
+		};
+	};
+};
+
+&dsi0_in {
+	remote-endpoint = <&mdp_dsi1_out>;
+};
+
+&dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&dsi0_phy {
+	vddio-supply = <&pm8921_lvs7>;
+	status = "okay";
+};
+
+&pm8921_mpps {
+	ice4_mpp_state: ice4-mpp-state {
+		pins = "mpp9", "mpp10";
+		function = "digital";
+		power-source = <PM8921_MPP_S4>;
+		input-enable;
+		bias-pull-up = <30000>;
+		output-low;
+	};
+};
+
 &pm8921_gpio {
+	ice4_reset_state: ice4-reset-state {
+		pins = "gpio9", "gpio36";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8921_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_HIGH>;
+		drive-push-pull;
+		bias-disable;
+		output-low;
+	};
+
 	gpio_keys_default: gpio-keys-default-state {
 		pins = "gpio30", "gpio35", "gpio37";
 		function = PMIC_GPIO_FUNC_NORMAL;
@@ -442,6 +657,36 @@
 };
 
 &tlmm_pinmux {
+	ice4_main_clk_state: ice4-main-clk-state {
+		pins = "gpio34";
+		function = "gp_clk_0b";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+
+	gsbi6_uart_pin_a: gsbi6-uart-pin-active-state {
+		rts-pins {
+			pins = "gpio17";
+			function = "gsbi6";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		cts-rx-pins {
+			pins = "gpio16", "gpio15";
+			function = "gsbi6";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		tx-pins {
+			pins = "gpio14";
+			function = "gsbi6";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
 	gsbi7_uart_pin_a: gsbi7-uart-pin-active-state {
 		rx-pins {
 			pins = "gpio83";
@@ -465,17 +710,25 @@
 		input-enable;
 		bias-disable;
 	};
+
+	touch_irq_default_state: touch-irq-default-state {
+		pins = "gpio67";
+		function = "gpio";
+		drive-strength = <2>;
+		input-enable;
+		bias-disable;
+	};
 };
 
 &usb_hs1_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l4>;
-	extcon = <&muic>;
+       v3p3-supply = <&pm8921_l3>;
+       v1p8-supply = <&pm8921_l4>;
+       extcon = <&muic>;
 };
 
 &usb1 {
-	dr_mode = "otg";
-	extcon = <&muic>, <&pm8921>;
+       dr_mode = "otg";
+       extcon = <&muic>, <&pm8921>;
 
-	status = "okay";
+       status = "okay";
 };
