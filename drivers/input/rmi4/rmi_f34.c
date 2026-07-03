@@ -436,9 +436,7 @@ static int rmi_firmware_update(struct rmi_driver_data *data,
 
 	rmi_enable_irq(rmi_dev, false);
 
-	if (data->f01_container->dev.driver)
-		/* Driver already bound, so enable ATTN now. */
-		return rmi_enable_sensor(rmi_dev);
+	return rmi_enable_sensor(rmi_dev);
 
 	rmi_dbg(RMI_DEBUG_FN, dev, "%s complete\n", __func__);
 

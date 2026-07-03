@@ -1228,12 +1228,9 @@ static int rmi_driver_probe(struct device *dev)
 	if (retval < 0)
 		goto err_destroy_functions;
 
-	if (data->f01_container->dev.driver) {
-		/* Driver already bound, so enable ATTN now. */
-		retval = rmi_enable_sensor(rmi_dev);
-		if (retval)
-			goto err_disable_irq;
-	}
+	retval = rmi_enable_sensor(rmi_dev);
+	if (retval)
+		goto err_disable_irq;
 
 	return 0;
 
