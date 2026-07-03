@@ -20,6 +20,7 @@
 #include <linux/extcon-provider.h>
 #include <linux/regmap.h>
 #include <linux/irqdomain.h>
+#include <linux/power_supply.h>
 
 #define	DEV_NAME			"max77693-muic"
 #define	DELAY_MS_DEFAULT		20000		/* unit: millisecond */
@@ -67,6 +68,7 @@ struct max77693_muic_info {
 	struct device *dev;
 	struct max77693_dev *max77693;
 	struct extcon_dev *edev;
+	struct power_supply *charger;
 	int prev_cable_type;
 	int prev_cable_type_gnd;
 	int prev_chg_type;
@@ -206,6 +208,47 @@ static const unsigned int max77693_extcon_cable[] = {
 	EXTCON_JIG,
 	EXTCON_DOCK,
 	EXTCON_NONE,
+};
+
+static enum power_supply_property max77693_muic_charger_props[] = {
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_ONLINE,
+};
+
+static bool max77693_muic_charger_online(struct max77693_muic_info *info)
+{
+	return extcon_get_state(info->edev, EXTCON_CHG_USB_SDP) > 0 ||
+	       extcon_get_state(info->edev, EXTCON_CHG_USB_DCP) > 0 ||
+	       extcon_get_state(info->edev, EXTCON_CHG_USB_CDP) > 0 ||
+	       extcon_get_state(info->edev, EXTCON_CHG_USB_SLOW) > 0 ||
+	       extcon_get_state(info->edev, EXTCON_CHG_USB_FAST) > 0;
+}
+
+static int max77693_muic_charger_get_property(struct power_supply *psy,
+		enum power_supply_property psp, union power_supply_propval *val)
+{
+	struct max77693_muic_info *info = power_supply_get_drvdata(psy);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_STATUS:
+		val->intval = max77693_muic_charger_online(info) ?
+			POWER_SUPPLY_STATUS_CHARGING :
+			POWER_SUPPLY_STATUS_DISCHARGING;
+		return 0;
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval = max77693_muic_charger_online(info);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+static const struct power_supply_desc max77693_muic_charger_desc = {
+	.name		= "max77693-muic-charger",
+	.type		= POWER_SUPPLY_TYPE_USB,
+	.properties	= max77693_muic_charger_props,
+	.num_properties	= ARRAY_SIZE(max77693_muic_charger_props),
+	.get_property	= max77693_muic_charger_get_property,
 };
 
 /*
@@ -995,6 +1038,9 @@ static void max77693_muic_irq_work(struct work_struct *work)
 		dev_err(info->dev, "failed to handle MUIC interrupt\n");
 
 	mutex_unlock(&info->mutex);
+
+	if (!ret && info->charger)
+		power_supply_changed(info->charger);
 }
 
 static irqreturn_t max77693_muic_irq_handler(int irq, void *data)
@@ -1054,6 +1100,9 @@ static int max77693_muic_detect_accessory(struct max77693_muic_info *info)
 
 	mutex_unlock(&info->mutex);
 
+	if (!ret && info->charger)
+		power_supply_changed(info->charger);
+
 	return 0;
 }
 
@@ -1070,6 +1119,7 @@ static int max77693_muic_probe(struct platform_device *pdev)
 	struct max77693_dev *max77693 = dev_get_drvdata(pdev->dev.parent);
 	struct max77693_platform_data *pdata = dev_get_platdata(max77693->dev);
 	struct max77693_muic_info *info;
+	struct power_supply_config psy_cfg = {};
 	struct max77693_reg_data *init_data;
 	int num_init_data;
 	int delay_jiffies;
@@ -1128,6 +1178,9 @@ static int max77693_muic_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, info);
 	mutex_init(&info->mutex);
 
+	psy_cfg.drv_data = info;
+	psy_cfg.fwnode = dev_fwnode(&pdev->dev);
+
 	ret = devm_work_autocancel(&pdev->dev, &info->irq_work,
 				   max77693_muic_irq_work);
 	if (ret)
@@ -1169,6 +1222,13 @@ static int max77693_muic_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to register extcon device\n");
 		return ret;
 	}
+
+	info->charger = devm_power_supply_register(&pdev->dev,
+					  &max77693_muic_charger_desc,
+					  &psy_cfg);
+	if (IS_ERR(info->charger))
+		return dev_err_probe(&pdev->dev, PTR_ERR(info->charger),
+				     "failed to register MUIC charger supply\n");
 
 	/* Initialize MUIC register by using platform data or default data */
 	if (pdata && pdata->muic_data) {
