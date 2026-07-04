@@ -48,14 +48,17 @@
 
 	gpio-keys {
 		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&volume_keys_pin_a>;
+
 		key-volume-up {
 			label = "Volume Up";
-			gpios = <&pm8921_gpio 4 GPIO_ACTIVE_HIGH>;
+			gpios = <&pm8921_gpio 4 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_VOLUMEUP>;
 		};
 		key-volume-down {
 			label = "Volume Down";
-			gpios = <&pm8921_gpio 38 GPIO_ACTIVE_HIGH>;
+			gpios = <&pm8921_gpio 38 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_VOLUMEDOWN>;
 		};
 	};
@@ -356,4 +359,13 @@
 &usb1 {
 	dr_mode = "otg";
 	status = "okay";
+};
+
+&pm8921_gpio {
+	volume_keys_pin_a: volume-keys-active {
+		pins = "gpio4", "gpio38";
+		function = "normal";
+		bias-disable;
+		qcom,no-inversion;
+	};
 };
