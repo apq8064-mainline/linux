@@ -55,6 +55,7 @@
 /* custom pinconf parameters */
 #define PM8XXX_QCOM_DRIVE_STRENGH      (PIN_CONFIG_END + 1)
 #define PM8XXX_QCOM_PULL_UP_STRENGTH   (PIN_CONFIG_END + 2)
+#define PM8XXX_QCOM_NO_INVERSION       (PIN_CONFIG_END + 3)
 
 /**
  * struct pm8xxx_pin_data - dynamic configuration for a pin
@@ -99,12 +100,14 @@ struct pm8xxx_gpio {
 static const struct pinconf_generic_params pm8xxx_gpio_bindings[] = {
 	{"qcom,drive-strength",		PM8XXX_QCOM_DRIVE_STRENGH,	0},
 	{"qcom,pull-up-strength",	PM8XXX_QCOM_PULL_UP_STRENGTH,	0},
+	{"qcom,no-inversion",		PM8XXX_QCOM_NO_INVERSION,	1},
 };
 
 #ifdef CONFIG_DEBUG_FS
 static const struct pin_config_item pm8xxx_conf_items[ARRAY_SIZE(pm8xxx_gpio_bindings)] = {
 	PCONFDUMP(PM8XXX_QCOM_DRIVE_STRENGH, "drive-strength", NULL, true),
 	PCONFDUMP(PM8XXX_QCOM_PULL_UP_STRENGTH,  "pull up strength", NULL, true),
+	PCONFDUMP(PM8XXX_QCOM_NO_INVERSION, "no-inversion", NULL, true),
 };
 #endif
 
@@ -304,6 +307,11 @@ static int pm8xxx_pin_config_get(struct pinctrl_dev *pctldev,
 			return -EINVAL;
 		arg = 1;
 		break;
+	case PM8XXX_QCOM_NO_INVERSION:
+		if (pin->inverted)
+			return -EINVAL;
+		arg = 1;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -388,6 +396,10 @@ static int pm8xxx_pin_config_set(struct pinctrl_dev *pctldev,
 		case PIN_CONFIG_DRIVE_OPEN_DRAIN:
 			pin->open_drain = 1;
 			banks |= BIT(1);
+			break;
+		case PM8XXX_QCOM_NO_INVERSION:
+			pin->inverted = false;
+			banks |= BIT(5);
 			break;
 		default:
 			dev_err(pctrl->dev,
