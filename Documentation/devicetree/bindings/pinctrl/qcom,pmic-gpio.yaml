@@ -565,6 +565,11 @@ $defs:
           <dt-bindings/pinctrl/qcom,pmic-gpio.h>
         enum: [0, 1, 2, 3]
 
+      qcom,no-inversion:
+        $ref: /schemas/types.yaml#/definitions/flag
+        description:
+          Disable hardware-level polarity inversion on the pin.
+
       drive-push-pull: true
       drive-open-drain: true
       drive-open-source: true
