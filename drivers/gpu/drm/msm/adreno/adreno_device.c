@@ -405,6 +405,7 @@ static struct platform_driver adreno_driver = {
 	.probe = adreno_probe,
 	.remove = adreno_remove,
 	.shutdown = adreno_shutdown,
+	.driver_managed_dma = true,
 	.driver = {
 		.name = "adreno",
 		.of_match_table = dt_match,
