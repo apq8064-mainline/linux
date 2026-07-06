@@ -676,6 +676,7 @@ static struct platform_driver mdp4_platform_driver = {
 	.probe      = mdp4_probe,
 	.remove     = mdp4_remove,
 	.shutdown   = msm_kms_shutdown,
+	.driver_managed_dma = true,
 	.driver     = {
 		.name   = "mdp4",
 		.of_match_table = mdp4_dt_match,
