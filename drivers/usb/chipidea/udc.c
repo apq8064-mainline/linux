@@ -2371,6 +2371,26 @@ static void udc_stop(struct ci_hdrc *ci)
 				     ci->platdata->pins_default);
 }
 
+static int udc_id_switch_for_device(struct ci_hdrc *ci)
+{
+	if (ci->platdata->pins_device)
+		pinctrl_select_state(ci->platdata->pctl,
+				     ci->platdata->pins_device);
+
+	ci_udc_enable_vbus_irq(ci, true);
+	return 0;
+}
+
+static void udc_id_switch_for_host(struct ci_hdrc *ci)
+{
+	ci_udc_enable_vbus_irq(ci, false);
+	ci->vbus_active = 0;
+
+	if (ci->platdata->pins_device && ci->platdata->pins_default)
+		pinctrl_select_state(ci->platdata->pctl,
+				     ci->platdata->pins_default);
+}
+
 #ifdef CONFIG_PM_SLEEP
 static void udc_suspend(struct ci_hdrc *ci)
 {
@@ -2413,6 +2433,7 @@ static void udc_resume(struct ci_hdrc *ci, bool power_lost)
 int ci_hdrc_gadget_init(struct ci_hdrc *ci)
 {
 	struct ci_role_driver *rdrv;
+	int ret;
 
 	if (!hw_read(ci, CAP_DCCPARAMS, DCCPARAMS_DC))
 		return -ENXIO;
@@ -2421,8 +2442,13 @@ int ci_hdrc_gadget_init(struct ci_hdrc *ci)
 	if (!rdrv)
 		return -ENOMEM;
 
-	rdrv->start	= udc_start;
-	rdrv->stop	= udc_stop;
+	if (ci->role_switch) {
+		rdrv->start	= udc_start;
+		rdrv->stop	= udc_stop;
+	} else {
+		rdrv->start	= udc_id_switch_for_device;
+		rdrv->stop	= udc_id_switch_for_host;
+	}
 #ifdef CONFIG_PM_SLEEP
 	rdrv->suspend	= udc_suspend;
 	rdrv->resume	= udc_resume;
@@ -2434,7 +2460,15 @@ int ci_hdrc_gadget_init(struct ci_hdrc *ci)
 
 	/* Pull down DP for possible charger detection */
 	hw_write(ci, OP_USBCMD, USBCMD_RS, 0);
-	return 0;
+
+	if (ci->role_switch)
+		return 0;
+
+	ret = udc_start(ci);
+	if (ret)
+		ci->roles[CI_ROLE_GADGET] = NULL;
+
+	return ret;
 }
 
 /*
@@ -2444,8 +2478,21 @@ int ci_hdrc_gadget_init(struct ci_hdrc *ci)
  */
 void ci_hdrc_gadget_destroy(struct ci_hdrc *ci)
 {
-	struct device *dev = &ci->gadget.dev;
+	if (!ci->roles[CI_ROLE_GADGET])
+		return;
 
-	if (ci->roles[CI_ROLE_GADGET] && device_is_registered(dev))
-		udc_stop(ci);
+	if (ci->role_switch) {
+		struct device *dev = &ci->gadget.dev;
+
+		if (device_is_registered(dev))
+			udc_stop(ci);
+		return;
+	}
+
+	usb_del_gadget_udc(&ci->gadget);
+
+	destroy_eps(ci);
+
+	dma_pool_destroy(ci->td_pool);
+	dma_pool_destroy(ci->qh_pool);
 }
