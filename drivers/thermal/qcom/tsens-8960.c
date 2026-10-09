@@ -6,6 +6,7 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/bitops.h>
+#include <linux/of.h>
 #include <linux/regmap.h>
 #include <linux/thermal.h>
 #include "tsens.h"
@@ -32,6 +33,8 @@
 #define THRESHOLD_ADDR		0x3624
 
 #define INT_STATUS_ADDR		0x363c
+/* APQ8064: upper/lower status clear bits live here, not in CNTL */
+#define STATUS_CNTL_ADDR_8064	0x3660
 
 #define S0_STATUS_OFF		0x3628
 #define S1_STATUS_OFF		0x362c
@@ -199,7 +202,7 @@ static int calibrate_8960(struct tsens_priv *priv)
 	return 0;
 }
 
-static const struct reg_field tsens_8960_regfields[MAX_REGFIELDS] = {
+static struct reg_field tsens_8960_regfields[MAX_REGFIELDS] = {
 	/* ----- SROT ------ */
 	/* No VERSION information */
 
@@ -256,8 +259,27 @@ static const struct reg_field tsens_8960_regfields[MAX_REGFIELDS] = {
 	[TRDY] = REG_FIELD(INT_STATUS_ADDR, 7, 7),
 };
 
+/*
+ * APQ8064 has 11 sensors, whose enable bits occupy CNTL[13:3]. The upper and
+ * lower status clear bits that MSM8960 keeps in CNTL[10:9] therefore moved to
+ * STATUS_CNTL[2:1]. Using the MSM8960 layout on APQ8064 makes every
+ * tsens_set_trips() call clear the enable bits of sensors 6 and 7, freezing
+ * their readings at the last value.
+ */
+static int init_8960(struct tsens_priv *priv)
+{
+	if (of_machine_is_compatible("qcom,apq8064")) {
+		tsens_8960_regfields[LOW_INT_CLEAR_0] =
+			(struct reg_field)REG_FIELD(STATUS_CNTL_ADDR_8064, 1, 1);
+		tsens_8960_regfields[UP_INT_CLEAR_0] =
+			(struct reg_field)REG_FIELD(STATUS_CNTL_ADDR_8064, 2, 2);
+	}
+
+	return init_common(priv);
+}
+
 static const struct tsens_ops ops_8960 = {
-	.init		= init_common,
+	.init		= init_8960,
 	.calibrate	= calibrate_8960,
 	.get_temp	= get_temp_common,
 	.enable		= enable_8960,
