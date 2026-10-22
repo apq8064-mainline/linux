@@ -256,14 +256,16 @@ struct msm_gem_object {
 	 *
 	 * 1) the BO is exported as a dma_buf
 	 * 2) the BO has open userspace handle
+	 * 3) the BO is prepared for scanout
 	 *
 	 * All of those conditions will hold an reference to the BO,
 	 * preventing it from being freed.  So lazily keeping around the
 	 * VMA will not prevent the BO from being freed.  (Or rather, the
 	 * reference loop is harmless in this case.)
 	 *
-	 * When the @vma_ref drops to zero, then kms->vm VMA will be
-	 * torn down.
+	 * When the @vma_ref drops to zero, the global GPU VM and kms->vm
+	 * VMAs will be torn down.  Closing one file's handle must not release
+	 * a global GPU mapping still used through another handle or dma_buf.
 	 */
 	atomic_t vma_ref;
 };

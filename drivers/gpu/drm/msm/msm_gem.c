@@ -51,11 +51,16 @@ static void put_iova_spaces(struct drm_gem_object *obj, struct drm_gpuvm *vm,
 
 static void msm_gem_close(struct drm_gem_object *obj, struct drm_file *file)
 {
+	struct msm_drm_private *priv = obj->dev->dev_private;
 	struct msm_context *ctx = file->driver_priv;
 	struct drm_exec exec;
 
 	update_ctx_mem(file, -obj->size);
 	msm_gem_vma_put(obj);
+
+	/* Global GPU mappings are shared by files and follow vma_ref. */
+	if (priv->gpu && ctx->vm == priv->gpu->vm)
+		return;
 
 	/*
 	 * If VM isn't created yet, nothing to cleanup.  And in fact calling
@@ -86,7 +91,7 @@ static void msm_gem_close(struct drm_gem_object *obj, struct drm_file *file)
 }
 
 /*
- * Get/put for kms->vm VMA
+ * Get/put for global GPU and KMS VMAs
  */
 
 void msm_gem_vma_get(struct drm_gem_object *obj)
@@ -97,16 +102,29 @@ void msm_gem_vma_get(struct drm_gem_object *obj)
 void msm_gem_vma_put(struct drm_gem_object *obj)
 {
 	struct msm_drm_private *priv = obj->dev->dev_private;
+	struct drm_exec exec;
 
 	if (atomic_dec_return(&to_msm_bo(obj)->vma_ref))
 		return;
+
+	if (priv->gpu && priv->gpu->vm) {
+		struct drm_gpuvm *vm = priv->gpu->vm;
+
+		/* A final dma-buf release can happen after the last handle close. */
+		dma_resv_wait_timeout(obj->resv, DMA_RESV_USAGE_BOOKKEEP, false,
+				      MAX_SCHEDULE_TIMEOUT);
+
+		msm_gem_lock_vm_and_obj(&exec, obj, vm);
+		/* An import may have acquired a new handle while we waited. */
+		if (!atomic_read(&to_msm_bo(obj)->vma_ref))
+			put_iova_spaces(obj, vm, true, "vma_put");
+		drm_exec_fini(&exec);
+	}
 
 	if (!priv->kms)
 		return;
 
 #ifdef CONFIG_DRM_MSM_KMS
-	struct drm_exec exec;
-
 	msm_gem_lock_vm_and_obj(&exec, obj, priv->kms->vm);
 	put_iova_spaces(obj, priv->kms->vm, true, "vma_put");
 	drm_exec_fini(&exec);     /* drop locks */
@@ -659,6 +677,7 @@ static bool is_kms_vm(struct drm_gpuvm *vm)
  */
 void msm_gem_unpin_iova(struct drm_gem_object *obj, struct drm_gpuvm *vm)
 {
+	struct msm_drm_private *priv = obj->dev->dev_private;
 	struct drm_gpuva *vma;
 	struct drm_exec exec;
 
@@ -667,7 +686,9 @@ void msm_gem_unpin_iova(struct drm_gem_object *obj, struct drm_gpuvm *vm)
 	if (vma) {
 		msm_gem_unpin_locked(obj);
 	}
-	if (!is_kms_vm(vm))
+	if (!is_kms_vm(vm) &&
+	    !(priv->gpu && vm == priv->gpu->vm &&
+	      atomic_read(&to_msm_bo(obj)->vma_ref)))
 		put_iova_spaces(obj, vm, true, "close");
 	drm_exec_fini(&exec);     /* drop locks */
 }
