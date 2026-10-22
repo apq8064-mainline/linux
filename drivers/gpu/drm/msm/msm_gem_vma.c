@@ -21,6 +21,45 @@ static uint vm_log_shift = 0;
 MODULE_PARM_DESC(vm_log_shift, "Length of VM op log");
 module_param_named(vm_log_shift, vm_log_shift, uint, 0600);
 
+/*
+ * On Adreno 3xx the GPU-side TLB and the CP's parked IB prefetch can
+ * retain translations well after the fences covering a BO have signaled,
+ * so an unmapped iova is not safe to recycle immediately: a late GPU
+ * access through the recycled translation wedges the fabric.  Hold freed
+ * iova ranges out of the allocator for a grace period before reuse.
+ */
+static ulong vm_quarantine_ms = 30000;
+MODULE_PARM_DESC(vm_quarantine_ms,
+	"Hold freed iova ranges out of reuse for this many ms (0 to disable)");
+module_param_named(vm_quarantine_ms, vm_quarantine_ms, ulong, 0600);
+
+struct msm_vm_quarantine {
+	struct list_head node;
+	struct drm_mm_node mm_node;
+	ktime_t freed;
+};
+
+/*
+ * Return quarantined ranges older than vm_quarantine_ms to the allocator.
+ * Must be called with the vm lock held (same protection as vm->mm).
+ */
+static void msm_gem_vm_quarantine_reap(struct msm_gem_vm *vm)
+{
+	struct msm_vm_quarantine *q, *tmp;
+
+	if (list_empty(&vm->quarantine))
+		return;
+
+	list_for_each_entry_safe (q, tmp, &vm->quarantine, node) {
+		if (ktime_ms_delta(ktime_get(), q->freed) < vm_quarantine_ms)
+			continue;
+
+		drm_mm_remove_node(&q->mm_node);
+		list_del(&q->node);
+		kfree(q);
+	}
+}
+
 /**
  * struct msm_vm_map_op - create new pgtable mapping
  */
@@ -159,6 +198,13 @@ static void
 msm_gem_vm_free(struct drm_gpuvm *gpuvm)
 {
 	struct msm_gem_vm *vm = container_of(gpuvm, struct msm_gem_vm, base);
+	struct msm_vm_quarantine *q, *tmp;
+
+	list_for_each_entry_safe (q, tmp, &vm->quarantine, node) {
+		drm_mm_remove_node(&q->mm_node);
+		list_del(&q->node);
+		kfree(q);
+	}
 
 	drm_mm_takedown(&vm->mm);
 	if (vm->mmu)
@@ -354,8 +400,25 @@ void msm_gem_vma_close(struct drm_gpuva *vma)
 	if (vma->gem.obj)
 		msm_gem_assert_locked(vma->gem.obj);
 
-	if (vma->va.addr && vm->managed)
-		drm_mm_remove_node(&msm_vma->node);
+	if (vma->va.addr && vm->managed) {
+		if (vm_quarantine_ms) {
+			struct msm_vm_quarantine *q;
+
+			q = kmalloc(sizeof(*q), GFP_KERNEL);
+			if (q) {
+				q->mm_node.start = msm_vma->node.start;
+				q->mm_node.size = msm_vma->node.size;
+				drm_mm_remove_node(&msm_vma->node);
+				drm_mm_reserve_node(&vm->mm, &q->mm_node);
+				q->freed = ktime_get();
+				list_add_tail(&q->node, &vm->quarantine);
+			} else {
+				drm_mm_remove_node(&msm_vma->node);
+			}
+		} else {
+			drm_mm_remove_node(&msm_vma->node);
+		}
+	}
 
 	drm_gpuva_remove(vma);
 	drm_gpuva_unlink(vma);
@@ -388,9 +451,16 @@ msm_gem_vma_new(struct drm_gpuvm *gpuvm, struct drm_gem_object *obj,
 	if (vm->managed) {
 		BUG_ON(offset != 0);
 		BUG_ON(!obj);  /* NULL mappings not valid for kernel managed VM */
+
 		ret = drm_mm_insert_node_in_range(&vm->mm, &vma->node,
 						obj->size, PAGE_SIZE, 0,
 						range_start, range_end, 0);
+		if (ret && vm_quarantine_ms) {
+			msm_gem_vm_quarantine_reap(vm);
+			ret = drm_mm_insert_node_in_range(&vm->mm, &vma->node,
+							obj->size, PAGE_SIZE, 0,
+							range_start, range_end, 0);
+		}
 
 		if (ret)
 			goto err_free_vma;
@@ -864,6 +934,7 @@ msm_gem_vm_create(struct drm_device *drm, struct msm_mmu *mmu, const char *name,
 	vm->managed = managed;
 
 	drm_mm_init(&vm->mm, va_start, va_size);
+	INIT_LIST_HEAD(&vm->quarantine);
 
 	/*
 	 * We don't really need vm log for kernel managed VMs, as the kernel

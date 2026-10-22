@@ -104,6 +104,16 @@ struct msm_gem_vm {
 	 */
 	struct drm_mm mm;
 
+	/**
+	 * @quarantine: Freed iova ranges held out of reuse until they have
+	 * aged past the point where the GPU could still hold a translation
+	 * or parked prefetch reference to them (vm_quarantine_ms).
+	 *
+	 * Entries keep their range reserved in @mm; protected by the vm
+	 * lock, same as @mm.
+	 */
+	struct list_head quarantine;
+
 	/** @mmu: The mmu object which manages the pgtables */
 	struct msm_mmu *mmu;
 
