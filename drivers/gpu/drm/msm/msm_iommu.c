@@ -6,7 +6,10 @@
 
 #include <linux/adreno-smmu-priv.h>
 #include <linux/io-pgtable.h>
+#include <linux/iommu.h>
 #include <linux/kmemleak.h>
+#include <linux/of_address.h>
+#include <linux/sizes.h>
 #include "msm_drv.h"
 #include "msm_gpu_trace.h"
 #include "msm_mmu.h"
@@ -20,6 +23,12 @@ struct msm_iommu {
 	struct page *prr_page;
 
 	struct kmem_cache *pt_cache;
+
+	/* GPU-visible mapping of the GPU-embedded SMMU register blocks,
+	 * used to issue in-stream TLBIALL from the command stream: */
+	u64 regs_iova;
+	unsigned int regs_units;
+	atomic_t pending_tlbi;
 };
 
 #define to_msm_iommu(x) container_of(x, struct msm_iommu, base)
@@ -699,6 +708,8 @@ static int msm_iommu_unmap(struct msm_mmu *mmu, uint64_t iova, size_t len)
 {
 	struct msm_iommu *iommu = to_msm_iommu(mmu);
 
+	atomic_set(&iommu->pending_tlbi, 1);
+
 	if (iova & BIT_ULL(48))
 		iova |= GENMASK_ULL(63, 49);
 
@@ -774,6 +785,98 @@ struct msm_mmu *msm_iommu_disp_new(struct device *dev, unsigned long quirks)
 	return mmu;
 }
 
+/* Fixed GPU VA for the GPU-visible SMMU register window; must sit below
+ * the gpuvm aperture, which starts at SZ_16M:
+ */
+#define MSM_IOMMU_GPU_REGS_IOVA	0x00800000
+
+/* Map the GPU-embedded SMMU register blocks into the GPU address space so
+ * the command stream can issue TLBIALL itself, ordered before any command
+ * that might touch a recycled VA (mirroring the downstream kgsl setstate
+ * register window).  Best effort: on failure regs_units stays 0 and the
+ * in-stream invalidate is simply not used.
+ */
+static void msm_iommu_map_gpu_regs(struct msm_iommu *iommu, struct device *dev)
+{
+	struct of_phandle_args args;
+	struct device_node *np0, *np1 = NULL;
+	struct resource r0, r1 = { };
+	u64 iova = MSM_IOMMU_GPU_REGS_IOVA;
+	size_t size;
+	int idx, ret;
+
+	if (of_parse_phandle_with_args(dev->of_node, "iommus", "#iommu-cells",
+				       0, &args))
+		return;
+	np0 = args.np;
+	if (!of_device_is_compatible(np0, "qcom,apq8064-iommu"))
+		goto out;
+
+	if (of_address_to_resource(np0, 0, &r0))
+		goto out;
+
+	/* The GPU lists every stream id; find the first *distinct* iommu node
+	 * (the second SMMU unit):
+	 */
+	for (idx = 1; idx < 64; idx++) {
+		struct device_node *np;
+
+		if (of_parse_phandle_with_args(dev->of_node, "iommus",
+					       "#iommu-cells", idx, &args))
+			break;
+		np = args.np;
+		if (np != np0) {
+			np1 = np;
+			break;
+		}
+		of_node_put(np);
+	}
+
+	if (np1 && of_address_to_resource(np1, 0, &r1)) {
+		of_node_put(np1);
+		np1 = NULL;
+	}
+
+	size = (np1 && r1.start == r0.end + 1) ? SZ_2M : SZ_1M;
+
+	ret = iommu_map(iommu->domain, iova, r0.start, size,
+			IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	if (ret) {
+		dev_warn(dev, "msm iommu: SMMU regs GPU-visible map failed: %d\n",
+			 ret);
+		goto out;
+	}
+
+	iommu->regs_iova = iova;
+	iommu->regs_units = size / SZ_1M;
+
+out:
+	of_node_put(np0);
+	if (np1)
+		of_node_put(np1);
+}
+
+/* Consume a pending in-stream TLB invalidate request: returns true (and
+ * the GPU-visible SMMU register window) if an unmap happened since the
+ * last submit and the register window was mapped successfully.
+ */
+bool msm_iommu_consume_pending_tlbi(struct msm_mmu *mmu, u64 *regs_iova,
+				    unsigned int *regs_units)
+{
+	struct msm_iommu *iommu = to_msm_iommu(mmu);
+
+	if (!atomic_xchg(&iommu->pending_tlbi, 0))
+		return false;
+
+	if (!iommu->regs_units)
+		return false;
+
+	*regs_iova = iommu->regs_iova;
+	*regs_units = iommu->regs_units;
+
+	return true;
+}
+
 struct msm_mmu *msm_iommu_gpu_new(struct device *dev, struct msm_gpu *gpu, unsigned long quirks)
 {
 	struct adreno_smmu_priv *adreno_smmu = dev_get_drvdata(dev);
@@ -794,6 +897,8 @@ struct msm_mmu *msm_iommu_gpu_new(struct device *dev, struct msm_gpu *gpu, unsig
 			kmem_cache_create("msm-mmu-pt", tblsz, tblsz, 0, NULL);
 	}
 	iommu_set_fault_handler(iommu->domain, msm_gpu_fault_handler, iommu);
+
+	msm_iommu_map_gpu_regs(iommu, dev);
 
 	/* Enable stall on iommu fault: */
 	if (adreno_smmu->set_stall)

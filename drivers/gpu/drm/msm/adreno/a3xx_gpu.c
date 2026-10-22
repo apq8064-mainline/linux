@@ -7,6 +7,9 @@
  */
 
 #include "a3xx_gpu.h"
+#include "msm_mmu.h"
+
+#include <linux/sizes.h>
 
 #define A3XX_INT0_MASK \
 	(A3XX_INT0_RBBM_AHB_ERROR |        \
@@ -30,10 +33,62 @@ extern bool hang_debug;
 static void a3xx_dump(struct msm_gpu *gpu);
 static bool a3xx_idle(struct msm_gpu *gpu);
 
+#define A3XX_SMMU_GLOBAL_TLBIALL_OFFSET	0xFFF00
+
+/* If a GPU VA was unmapped since the last submit, the GPU may still hold
+ * a stale translation for it (fence-signaled does not imply translation
+ * dropped on a3xx); once the VA is recycled the stale translation can be
+ * used again.  The v0 SMMU has no TLBSYNC/TLBSTATUS, so completion is
+ * enforced with idle (+WAIT_FOR_ME on a320) and a prefetch-stalling nop
+ * IB around the invalidate write, as downstream kgsl does.
+ */
+static void
+a3xx_emit_pending_tlbi(struct msm_gpu *gpu, struct msm_gem_submit *submit)
+{
+	struct a3xx_gpu *a3xx_gpu = to_a3xx_gpu(to_adreno_gpu(gpu));
+	struct msm_ringbuffer *ring = submit->ring;
+	u64 regs_iova;
+	unsigned int units, u;
+
+	if (!msm_iommu_consume_pending_tlbi(to_msm_vm(submit->vm)->mmu,
+					    &regs_iova, &units))
+		return;
+
+	OUT_PKT3(ring, CP_WAIT_FOR_IDLE, 1);
+	OUT_RING(ring, 0x00000000);
+	OUT_PKT3(ring, CP_WAIT_FOR_ME, 1);
+	OUT_RING(ring, 0x00000000);
+
+	for (u = 0; u < units; u++) {
+		OUT_PKT3(ring, CP_MEM_WRITE, 2);
+		OUT_RING(ring, lower_32_bits(regs_iova + u * SZ_1M +
+					     A3XX_SMMU_GLOBAL_TLBIALL_OFFSET));
+		OUT_RING(ring, 0);
+	}
+
+	OUT_PKT3(ring, CP_WAIT_FOR_IDLE, 1);
+	OUT_RING(ring, 0x00000000);
+	OUT_PKT3(ring, CP_WAIT_FOR_ME, 1);
+	OUT_RING(ring, 0x00000000);
+
+	if (a3xx_gpu->tlbi_nop_iova) {
+		OUT_PKT3(ring, CP_INDIRECT_BUFFER_PFD, 2);
+		OUT_RING(ring, lower_32_bits(a3xx_gpu->tlbi_nop_iova));
+		OUT_RING(ring, 2);
+		OUT_PKT2(ring);
+	}
+
+	/* invalidate all CP-cached state blocks: */
+	OUT_PKT3(ring, CP_INVALIDATE_STATE, 1);
+	OUT_RING(ring, 0x7fff);
+}
+
 static void a3xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 {
 	struct msm_ringbuffer *ring = submit->ring;
 	unsigned int i;
+
+	a3xx_emit_pending_tlbi(gpu, submit);
 
 	for (i = 0; i < submit->nr_cmds; i++) {
 		switch (submit->cmd[i].type) {
@@ -387,6 +442,9 @@ static void a3xx_destroy(struct msm_gpu *gpu)
 
 	DBG("%s", gpu->name);
 
+	if (a3xx_gpu->tlbi_nop_bo)
+		msm_gem_kernel_put(a3xx_gpu->tlbi_nop_bo, gpu->vm);
+
 	adreno_gpu_cleanup(adreno_gpu);
 
 	adreno_gpu_ocmem_cleanup(&a3xx_gpu->ocmem);
@@ -536,6 +594,31 @@ static u32 a3xx_get_rptr(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	return ring->memptrs->rptr;
 }
 
+/* Allocate the nop IB used to stall CP prefetch around the in-stream
+ * invalidate.  This is not fatal on failure: the invalidate is still
+ * emitted, just without the prefetch stall.
+ */
+static void a3xx_alloc_tlbi_nop(struct a3xx_gpu *a3xx_gpu)
+{
+	struct msm_gpu *gpu = &a3xx_gpu->base.base;
+	void *ptr;
+
+	ptr = msm_gem_kernel_new(gpu->dev, SZ_4K,
+			check_apriv(gpu, MSM_BO_WC | MSM_BO_GPU_READONLY),
+			gpu->vm, &a3xx_gpu->tlbi_nop_bo,
+			&a3xx_gpu->tlbi_nop_iova);
+	if (IS_ERR(ptr)) {
+		a3xx_gpu->tlbi_nop_bo = NULL;
+		a3xx_gpu->tlbi_nop_iova = 0;
+		DRM_DEV_ERROR(gpu->dev->dev,
+			      "a3xx: nop IB alloc failed, prefetch stall disabled\n");
+		return;
+	}
+
+	((u32 *)ptr)[0] = CP_TYPE3_PKT | (CP_NOP << 8);
+	((u32 *)ptr)[1] = CP_TYPE3_PKT | (CP_NOP << 8);
+}
+
 static struct msm_gpu *a3xx_gpu_init(struct drm_device *dev)
 {
 	struct a3xx_gpu *a3xx_gpu = NULL;
@@ -600,6 +683,8 @@ static struct msm_gpu *a3xx_gpu_init(struct drm_device *dev)
 	 */
 	icc_set_bw(icc_path, 0, Bps_to_icc(gpu->fast_rate) * 8);
 	icc_set_bw(ocmem_icc_path, 0, Bps_to_icc(gpu->fast_rate) * 8);
+
+	a3xx_alloc_tlbi_nop(a3xx_gpu);
 
 	return gpu;
 
