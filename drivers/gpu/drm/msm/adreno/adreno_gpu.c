@@ -1239,6 +1239,16 @@ int adreno_gpu_init(struct drm_device *drm, struct platform_device *pdev,
 		adreno_gpu->info->inactive_period);
 	pm_runtime_use_autosuspend(dev);
 
+	/*
+	 * A3xx has no supported runtime suspend/resume sequence and
+	 * downstream kgsl never runtime-suspends it either.  Forbid runtime
+	 * suspend to avoid the post-suspend hangs and the suspend latency;
+	 * the system suspend path still suspends the GPU through
+	 * pm_runtime_force_suspend().
+	 */
+	if (adreno_gpu->info->family == ADRENO_3XX)
+		pm_runtime_forbid(dev);
+
 	return msm_gpu_init(drm, pdev, &adreno_gpu->base, &funcs->base,
 			gpu_name, &adreno_gpu_config);
 }
