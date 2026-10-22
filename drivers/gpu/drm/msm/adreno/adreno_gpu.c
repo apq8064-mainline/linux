@@ -1239,6 +1239,13 @@ int adreno_gpu_init(struct drm_device *drm, struct platform_device *pdev,
 		adreno_gpu->info->inactive_period);
 	pm_runtime_use_autosuspend(dev);
 
+	/*
+	 * A320 has no supported runtime suspend/resume sequence.
+	 * Forbid runtime suspend to avoid the post-suspend hangs.
+	 */
+	if (adreno_is_a320(adreno_gpu))
+		pm_runtime_forbid(dev);
+
 	return msm_gpu_init(drm, pdev, &adreno_gpu->base, &funcs->base,
 			gpu_name, &adreno_gpu_config);
 }
