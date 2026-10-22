@@ -92,4 +92,7 @@ int msm_iommu_pagetable_params(struct msm_mmu *mmu, phys_addr_t *ttbr,
 int msm_iommu_pagetable_walk(struct msm_mmu *mmu, unsigned long iova, uint64_t ptes[4]);
 struct iommu_domain_geometry *msm_iommu_get_geometry(struct msm_mmu *mmu);
 
+bool msm_iommu_consume_pending_tlbi(struct msm_mmu *mmu, u64 *regs_iova,
+				    unsigned int *regs_units);
+
 #endif /* __MSM_MMU_H__ */
