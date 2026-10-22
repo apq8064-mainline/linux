@@ -241,6 +241,26 @@ static int a3xx_hw_init(struct msm_gpu *gpu)
 		/* Set up VBIF_ROUND_ROBIN_QOS_ARB: */
 		gpu_write(gpu, REG_A3XX_VBIF_ROUND_ROBIN_QOS_ARB, 0x0003);
 
+	} else if (adreno_is_a320(adreno_gpu)) {
+		/* Set up 16 deep read/write request queues: */
+		gpu_write(gpu, REG_A3XX_VBIF_IN_RD_LIM_CONF0, 0x10101010);
+		gpu_write(gpu, REG_A3XX_VBIF_IN_RD_LIM_CONF1, 0x10101010);
+		gpu_write(gpu, REG_A3XX_VBIF_OUT_RD_LIM_CONF0, 0x10101010);
+		gpu_write(gpu, REG_A3XX_VBIF_OUT_WR_LIM_CONF0, 0x10101010);
+		gpu_write(gpu, REG_A3XX_VBIF_DDR_OUT_MAX_BURST, 0x0000303);
+		gpu_write(gpu, REG_A3XX_VBIF_IN_WR_LIM_CONF0, 0x10101010);
+		gpu_write(gpu, REG_A3XX_VBIF_IN_WR_LIM_CONF1, 0x10101010);
+		/* Enable WR-REQ: */
+		gpu_write(gpu, REG_A3XX_VBIF_GATE_OFF_WRREQ_EN, 0x0000ff);
+		/* Set up round robin arbitration between both AXI ports: */
+		gpu_write(gpu, REG_A3XX_VBIF_ARB_CTL, 0x00000030);
+		/* Set up AOOO: */
+		gpu_write(gpu, REG_A3XX_VBIF_OUT_AXI_AOOO_EN, 0x0000003c);
+		gpu_write(gpu, REG_A3XX_VBIF_OUT_AXI_AOOO, 0x003c003c);
+		/* Enable 1K sort: */
+		gpu_write(gpu, REG_A3XX_VBIF_ABIT_SORT, 0x000000ff);
+		gpu_write(gpu, REG_A3XX_VBIF_ABIT_SORT_CONF, 0x000000a4);
+
 	} else if (adreno_is_a330(adreno_gpu)) {
 		/* Set up 16 deep read/write request queues: */
 		gpu_write(gpu, REG_A3XX_VBIF_IN_RD_LIM_CONF0, 0x18181818);
