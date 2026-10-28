@@ -37,13 +37,6 @@ struct wcn36xx_rate {
 	enum rate_info_bw bw;
 };
 
-/* Buffer descriptor rx_ch field is limited to 5-bit (4+1), a mapping is used
- * for 11A Channels.
- */
-static const u8 ab_rx_ch_map[] = { 36, 40, 44, 48, 52, 56, 60, 64, 100, 104,
-				   108, 112, 116, 120, 124, 128, 132, 136, 140,
-				   149, 153, 157, 161, 165, 144 };
-
 static const struct wcn36xx_rate wcn36xx_rate_table[] = {
 	/* 11b rates */
 	{  10, 0, RX_ENC_LEGACY, 0, RATE_INFO_BW_20 },
@@ -366,21 +359,13 @@ int wcn36xx_rx_skb(struct wcn36xx *wcn, struct sk_buff *skb)
 
 	wcn36xx_dbg(WCN36XX_DBG_RX, "status.flags=%x\n", status.flag);
 
-	if (bd->scan_learn) {
-		/* If packet originate from hardware scanning, extract the
-		 * band/channel from bd descriptor.
-		 */
-		u8 hwch = (bd->reserved0 << 4) + bd->rx_ch;
-
-		if (bd->rf_band != 1 && hwch <= sizeof(ab_rx_ch_map) && hwch >= 1) {
-			status.band = NL80211_BAND_5GHZ;
-			status.freq = ieee80211_channel_to_frequency(ab_rx_ch_map[hwch - 1],
-								     status.band);
-		} else {
-			status.band = NL80211_BAND_2GHZ;
-			status.freq = ieee80211_channel_to_frequency(hwch, status.band);
-		}
-	} else if (wcn->hw->conf.chandef.chan) {
+	/* Hardware scan offload is disabled: the firmware tags scan frames with
+	 * scan_learn, but its rf_band encoding (0 = 2.4GHz) does not match the
+	 * upstream expectation (1 = 2.4GHz), which misclassifies 2.4GHz beacons
+	 * as 5GHz and gets them dropped when the 5GHz band is not registered.
+	 * Use the current operating channel, which is known for SW scans.
+	 */
+	if (wcn->hw->conf.chandef.chan) {
 		status.band = WCN36XX_BAND(wcn);
 		status.freq = WCN36XX_CENTER_FREQ(wcn);
 	} else {
