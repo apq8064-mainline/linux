@@ -4,6 +4,10 @@
  * Author: Rob Clark <robdclark@gmail.com>
  */
 
+#include <linux/ktime.h>
+#include <linux/wait.h>
+
+#include <drm/drm_atomic.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_flip_work.h>
 #include <drm/drm_managed.h>
@@ -73,17 +77,25 @@ static void request_pending(struct drm_crtc *crtc, uint32_t pending)
 	mdp_irq_register(&get_kms(crtc)->base, &mdp4_crtc->vblank);
 }
 
-static void crtc_flush(struct drm_crtc *crtc)
+static void crtc_flush(struct drm_crtc *crtc, u32 old_plane_mask)
 {
 	struct mdp4_crtc *mdp4_crtc = to_mdp4_crtc(crtc);
 	struct mdp4_kms *mdp4_kms = get_kms(crtc);
 	struct drm_plane *plane;
+	u32 plane_mask = crtc->state->plane_mask | old_plane_mask;
 	uint32_t flush = 0;
 
-	drm_atomic_crtc_for_each_plane(plane, crtc) {
+	drm_for_each_plane_mask(plane, crtc->dev, plane_mask) {
 		enum mdp4_pipe pipe_id = mdp4_plane_pipe(plane);
 		flush |= pipe2flush(pipe_id);
 	}
+
+	/*
+	 * An unused mixer cannot complete a mixer-only flush. Include removed
+	 * pipes so unstaging the last pipe still latches the mixer configuration.
+	 */
+	if (!flush)
+		return;
 
 	flush |= ovlp2flush(mdp4_crtc->ovlp);
 
@@ -304,7 +316,7 @@ static void mdp4_crtc_atomic_enable(struct drm_crtc *crtc,
 
 	mdp_irq_register(&mdp4_kms->base, &mdp4_crtc->err);
 
-	crtc_flush(crtc);
+	crtc_flush(crtc, drm_atomic_get_old_crtc_state(state, crtc)->plane_mask);
 
 	mdp4_crtc->enabled = true;
 }
@@ -329,6 +341,7 @@ static void mdp4_crtc_atomic_flush(struct drm_crtc *crtc,
 				   struct drm_atomic_commit *state)
 {
 	struct mdp4_crtc *mdp4_crtc = to_mdp4_crtc(crtc);
+	struct drm_crtc_state *old_crtc_state = drm_atomic_get_old_crtc_state(state, crtc);
 	struct drm_device *dev = crtc->dev;
 	unsigned long flags;
 
@@ -342,7 +355,7 @@ static void mdp4_crtc_atomic_flush(struct drm_crtc *crtc,
 	spin_unlock_irqrestore(&dev->event_lock, flags);
 
 	blend_setup(crtc);
-	crtc_flush(crtc);
+	crtc_flush(crtc, crtc->state->active ? old_crtc_state->plane_mask : 0);
 	request_pending(crtc, PENDING_FLIP);
 }
 
@@ -469,7 +482,7 @@ static int mdp4_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 	mdp4_crtc->cursor.y = y;
 	spin_unlock_irqrestore(&mdp4_crtc->cursor.lock, flags);
 
-	crtc_flush(crtc);
+	crtc_flush(crtc, 0);
 	request_pending(crtc, PENDING_CURSOR);
 
 	return 0;
@@ -522,7 +535,7 @@ static void mdp4_crtc_err_irq(struct mdp_irq *irq, uint32_t irqstatus)
 	struct mdp4_crtc *mdp4_crtc = container_of(irq, struct mdp4_crtc, err);
 	struct drm_crtc *crtc = &mdp4_crtc->base;
 	DBG("%s: error: %08x", mdp4_crtc->name, irqstatus);
-	crtc_flush(crtc);
+	crtc_flush(crtc, 0);
 }
 
 static void mdp4_crtc_wait_for_flush_done(struct drm_crtc *crtc)
@@ -531,17 +544,37 @@ static void mdp4_crtc_wait_for_flush_done(struct drm_crtc *crtc)
 	struct mdp4_crtc *mdp4_crtc = to_mdp4_crtc(crtc);
 	struct mdp4_kms *mdp4_kms = get_kms(crtc);
 	wait_queue_head_t *queue = drm_crtc_vblank_waitqueue(crtc);
+	ktime_t deadline;
 	int ret;
+
+	if (!mdp4_crtc->flushed_mask)
+		return;
 
 	ret = drm_crtc_vblank_get(crtc);
 	if (ret)
 		return;
 
-	ret = wait_event_timeout(*queue,
-		!(mdp4_read(mdp4_kms, REG_MDP4_OVERLAY_FLUSH) &
-			mdp4_crtc->flushed_mask),
-		msecs_to_jiffies(50));
-	if (ret <= 0)
+	deadline = ktime_add_ms(ktime_get(), 50);
+
+	/*
+	 * Flush bits can clear between vblank interrupts. Keep vblank wakeups,
+	 * but also poll every 2ms without rounding the interval to whole jiffies.
+	 */
+	for (;;) {
+		ktime_t remaining = ktime_sub(deadline, ktime_get());
+
+		if (ktime_compare(remaining, 0) <= 0)
+			break;
+
+		ret = wait_event_hrtimeout(*queue,
+			!(mdp4_read(mdp4_kms, REG_MDP4_OVERLAY_FLUSH) &
+				mdp4_crtc->flushed_mask),
+			min_t(ktime_t, remaining, ms_to_ktime(2)));
+		if (!ret)
+			break;
+	}
+
+	if (mdp4_read(mdp4_kms, REG_MDP4_OVERLAY_FLUSH) & mdp4_crtc->flushed_mask)
 		dev_warn(dev->dev, "vblank time out, crtc=%s\n", mdp4_crtc->base.name);
 
 	mdp4_crtc->flushed_mask = 0;
