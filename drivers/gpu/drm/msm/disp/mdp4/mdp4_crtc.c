@@ -135,18 +135,6 @@ static void unref_cursor_worker(struct drm_flip_work *work, void *val)
 	drm_gem_object_put(val);
 }
 
-/* statically (for now) map planes to mixer stage (z-order): */
-static const int idxs[] = {
-		[VG1]  = 1,
-		[VG2]  = 2,
-		[RGB1] = 0,
-		[RGB2] = 0,
-		[RGB3] = 0,
-		[VG3]  = 3,
-		[VG4]  = 4,
-
-};
-
 /* setup mixer config, for which we need to consider all crtc's and
  * the planes attached to them
  *
@@ -167,7 +155,8 @@ static void setup_mixer(struct mdp4_kms *mdp4_kms)
 
 		drm_atomic_crtc_for_each_plane(plane, crtc) {
 			enum mdp4_pipe pipe_id = mdp4_plane_pipe(plane);
-			int idx = idxs[pipe_id];
+			unsigned int idx = plane->state->zpos;
+
 			mixer_cfg = mixercfg(mixer_cfg, mdp4_crtc->mixer,
 					pipe_id, stages[idx]);
 		}
@@ -190,8 +179,8 @@ static void blend_setup(struct drm_crtc *crtc)
 	mdp4_write(mdp4_kms, REG_MDP4_OVLP_TRANSP_HIGH1(ovlp), 0);
 
 	drm_atomic_crtc_for_each_plane(plane, crtc) {
-		enum mdp4_pipe pipe_id = mdp4_plane_pipe(plane);
-		int idx = idxs[pipe_id];
+		unsigned int idx = plane->state->zpos;
+
 		if (idx > 0) {
 			const struct msm_format *format =
 					msm_framebuffer_format(plane->state->fb);
@@ -325,8 +314,25 @@ static int mdp4_crtc_atomic_check(struct drm_crtc *crtc,
 		struct drm_atomic_commit *state)
 {
 	struct mdp4_crtc *mdp4_crtc = to_mdp4_crtc(crtc);
+	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
+	const struct drm_plane_state *plane_state;
+	struct drm_plane *plane;
+	u32 stages = 0;
+
 	DBG("%s: check", mdp4_crtc->name);
-	// TODO anything else to check?
+
+	/* Each hardware mixer stage can take only one pipe, including the base. */
+	drm_atomic_crtc_state_for_each_plane_state(plane, plane_state, crtc_state) {
+		unsigned int stage = plane_state->zpos;
+
+		if (stage > 4 || (stages & BIT(stage))) {
+			drm_dbg_kms(crtc->dev, "%s: invalid or occupied mixer stage %u\n",
+				    crtc->name, stage);
+			return -EINVAL;
+		}
+		stages |= BIT(stage);
+	}
+
 	return 0;
 }
 

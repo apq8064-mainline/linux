@@ -5,10 +5,12 @@
  */
 
 #include <drm/drm_atomic.h>
+#include <drm/drm_blend.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_atomic_helper.h>
+#include <drm/drm_plane.h>
 
 #include "mdp4_kms.h"
 
@@ -53,24 +55,30 @@ static struct mdp4_kms *get_kms(struct drm_plane *plane)
 	return to_mdp4_kms(to_mdp_kms(priv->kms));
 }
 
-/* helper to install properties which are common to planes and crtcs */
-static void mdp4_plane_install_properties(struct drm_plane *plane,
-		struct drm_mode_object *obj)
+static int mdp4_plane_install_properties(struct drm_plane *plane)
 {
-	// XXX
-}
+	struct mdp4_plane *mdp4_plane = to_mdp4_plane(plane);
+	static const unsigned int default_zpos[] = {
+		[VG1] = 1,
+		[VG2] = 2,
+		[RGB1] = 0,
+		[RGB2] = 0,
+		[RGB3] = 0,
+		[VG3] = 3,
+		[VG4] = 4,
+	};
 
-static int mdp4_plane_set_property(struct drm_plane *plane,
-		struct drm_property *property, uint64_t val)
-{
-	// XXX
-	return -EINVAL;
+	/* Keep primary planes at the base stage and preserve overlay defaults. */
+	if (plane->type == DRM_PLANE_TYPE_PRIMARY)
+		return drm_plane_create_zpos_immutable_property(plane, 0);
+
+	return drm_plane_create_zpos_property(plane,
+			default_zpos[mdp4_plane->pipe], 1, 4);
 }
 
 static const struct drm_plane_funcs mdp4_plane_funcs = {
 		.update_plane = drm_atomic_helper_update_plane,
 		.disable_plane = drm_atomic_helper_disable_plane,
-		.set_property = mdp4_plane_set_property,
 		.reset = drm_atomic_helper_plane_reset,
 		.atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
 		.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
@@ -401,6 +409,7 @@ struct drm_plane *mdp4_plane_init(struct drm_device *dev,
 	uint32_t pipe_caps;
 	const uint32_t *formats;
 	size_t nformats;
+	int ret;
 
 	type = private_plane ? DRM_PLANE_TYPE_PRIMARY : DRM_PLANE_TYPE_OVERLAY;
 
@@ -428,7 +437,9 @@ struct drm_plane *mdp4_plane_init(struct drm_device *dev,
 
 	drm_plane_helper_add(plane, &mdp4_plane_helper_funcs);
 
-	mdp4_plane_install_properties(plane, &plane->base);
+	ret = mdp4_plane_install_properties(plane);
+	if (ret)
+		return ERR_PTR(ret);
 
 	drm_plane_enable_fb_damage_clips(plane);
 
