@@ -37,12 +37,28 @@ properties:
   clocks:
     items:
       - description: Interface clock for this controller
-      - description: Interrupt for controller core's BAM
+      - description: SLIMbus core clock
 
   clock-names:
     items:
       - const: iface
       - const: core
+
+  dmas:
+    minItems: 1
+    maxItems: 7
+    description: BAM channels for manager playback ports, starting at port 17
+
+  dma-names:
+    minItems: 1
+    items:
+      - const: tx0
+      - const: tx1
+      - const: tx2
+      - const: tx3
+      - const: tx4
+      - const: tx5
+      - const: tx6
 
   interrupts:
     maxItems: 1
