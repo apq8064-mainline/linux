@@ -2421,6 +2421,16 @@ config SND_SOC_WCD_CLASSH
 config SND_SOC_WCD_COMMON
 	tristate
 
+config SND_SOC_WCD9310
+	tristate "WCD9310 Codec"
+	depends on SLIMBUS && OF && GPIOLIB && COMMON_CLK
+	select REGMAP
+	help
+	  Support the WCD9310 tabla2x SLIMbus codec. The initial playback
+	  interface supports 48 kHz mono S16_LE through LINEOUT2/4 or the
+	  earpiece and headphone outputs. Capture and other stream formats
+	  are not provided by this initial driver.
+
 config SND_SOC_WCD9335
 	tristate "WCD9335 Codec"
 	depends on SLIMBUS
