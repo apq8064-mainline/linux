@@ -189,6 +189,16 @@
 		post-power-on-delay-ms = <200>;
 		power-off-delay-us = <200000>;
 	};
+
+	sound {
+		compatible = "qcom,apq8064-tabla-snd-card";
+		model = "apq8064-tabla";
+		codec = <&tabla_codec>;
+		speaker-en-gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
+		hp-det-gpios = <&tlmm_pinmux 81 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spk_en_state>, <&hp_det_state>;
+	};
 };
 
 &gsbi6 {
@@ -237,6 +247,14 @@
 		regulator-name = "8917_l33";
 		regulator-min-microvolt = <1200000>;
 		regulator-max-microvolt = <1200000>;
+	};
+
+	/* Codec RX/TX analog supply. */
+	pm8917_l34: regulator-l34 {
+		compatible = "qcom,pm8917-l34";
+		regulator-name = "8917_l34";
+		regulator-min-microvolt = <2200000>;
+		regulator-max-microvolt = <2200000>;
 	};
 };
 
@@ -336,13 +354,6 @@
 		pm8921_l17: l17 {
 			regulator-min-microvolt = <3300000>;
 			regulator-max-microvolt = <3300000>;
-			bias-pull-down;
-		};
-
-		/* legacy comment kept for prior first-pass attempt */
-		pm8921_l15: l15 {
-			regulator-min-microvolt = <1800000>;
-			regulator-max-microvolt = <2950000>;
 			bias-pull-down;
 		};
 
@@ -477,8 +488,6 @@
 
 		/*
 		 * msm_sdcc.1-sdc-vdd_io
-		 * tabla2x-slim-CDC_VDDA_RX
-		 * tabla2x-slim-CDC_VDDA_TX
 		 * tabla2x-slim-CDC_VDD_CP
 		 * tabla2x-slim-VDDIO_CDC
 		 */
@@ -654,9 +663,87 @@
 		bias-pull-up;
 		power-source = <PM8921_GPIO_S4>;
 	};
+
+	cdc_reset_state: cdc-reset-state {
+		pins = "gpio38";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8921_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+		drive-push-pull;
+		bias-disable;
+		output-low;
+	};
+
+	spk_en_state: spk-en-state {
+		pins = "gpio18";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8921_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+		drive-push-pull;
+		bias-disable;
+		output-low;
+	};
+};
+
+&slimbam {
+	status = "okay";
+};
+
+&slimbus {
+	pinctrl-names = "default";
+	pinctrl-0 = <&slimbus_default_state>;
+	status = "okay";
+
+	tabla_ifd: codec@0,0 {
+		compatible = "slim217,60";
+		reg = <0 0>;
+	};
+
+	tabla_codec: codec@1,0 {
+		compatible = "slim217,60";
+		reg = <1 0>;
+
+		clocks = <&lcc CODEC_I2S_SPKR_OSR_CLK>;
+		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cdc_mclk_state>, <&cdc_reset_state>;
+
+		reset-gpios = <&pm8921_gpio 38 GPIO_ACTIVE_LOW>;
+		slim-ifc-dev = <&tabla_ifd>;
+		#sound-dai-cells = <0>;
+
+		cdc-vdd-cp-supply = <&pm8921_s4>;
+		cdc-vdda-rx-supply = <&pm8917_l34>;
+		cdc-vdda-tx-supply = <&pm8917_l34>;
+		vddio-cdc-supply = <&pm8921_s4>;
+		vddd-cdc-d-supply = <&pm8921_l25>;
+		cdc-vdda-a-1p2v-supply = <&pm8921_l25>;
+	};
 };
 
 &tlmm_pinmux {
+	hp_det_state: hp-det-state {
+		pins = "gpio81";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		input-enable;
+	};
+
+	slimbus_default_state: slimbus-default-state {
+		pins = "gpio40", "gpio41";
+		function = "slimbus";
+		drive-strength = <8>;
+		bias-bus-hold;
+	};
+
+	cdc_mclk_state: cdc-mclk-state {
+		pins = "gpio39";
+		function = "codec_spkr_i2s";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
 	ice4_main_clk_state: ice4-main-clk-state {
 		pins = "gpio34";
 		function = "gp_clk_0b";
