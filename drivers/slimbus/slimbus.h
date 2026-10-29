@@ -494,7 +494,6 @@ struct slim_controller {
 
 int slim_device_report_present(struct slim_controller *ctrl,
 			       struct slim_eaddr *e_addr, u8 *laddr);
-void slim_report_absent(struct slim_device *sbdev);
 int slim_register_controller(struct slim_controller *ctrl);
 int slim_unregister_controller(struct slim_controller *ctrl);
 void slim_msg_response(struct slim_controller *ctrl, u8 *reply, u8 tid, u8 l);

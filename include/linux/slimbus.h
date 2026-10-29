@@ -182,6 +182,7 @@ struct slim_device *of_slim_get_device(struct slim_controller *ctrl,
 struct slim_device *slim_get_device(struct slim_controller *ctrl,
 				    struct slim_eaddr *e_addr);
 int slim_get_logical_addr(struct slim_device *sbdev);
+void slim_report_absent(struct slim_device *sbdev);
 
 /* Information Element management messages */
 #define SLIM_MSG_MC_REQUEST_INFORMATION          0x20
