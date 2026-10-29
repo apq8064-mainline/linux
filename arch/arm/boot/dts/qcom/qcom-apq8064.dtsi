@@ -756,6 +756,36 @@
 				      "pcm_codec_clk";
 		};
 
+		slimbus: slim@28080000 {
+			compatible = "qcom,apq8064-slim", "qcom,slim";
+			reg = <0x28080000 0x2000>, <0x0080207c 4>;
+			reg-names = "ctrl", "slew";
+			interrupts = <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&lcc SLIMBUS_SRC>, <&lcc AUDIO_SLIMBUS_CLK>;
+			clock-names = "iface", "core";
+			dmas = <&slimbam 24>;
+			dma-names = "tx0";
+			#address-cells = <2>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		slimbam: dma-controller@28084000 {
+			compatible = "qcom,bam-v1.3.0";
+			reg = <0x28084000 0x2000>;
+			interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&lcc SPS_SLIMBUS_CLK>;
+			clock-names = "bam_clk";
+			/* Set the shared root before BAM prepares the gated-rate source. */
+			assigned-clocks = <&lcc SLIMBUS_SRC>;
+			assigned-clock-rates = <24576000>;
+			#dma-cells = <1>;
+			qcom,ee = <1>;
+			qcom,ee-vmid = <1>;
+			qcom,ee-pipe-mask = <0x3f000007>;
+			status = "disabled";
+		};
+
 		mmcc: clock-controller@4000000 {
 			compatible = "qcom,mmcc-apq8064";
 			reg = <0x4000000 0x1000>;
@@ -1184,7 +1214,6 @@
 			};
 		};
 
-
 		dsi0_phy: phy@4700200 {
 			compatible = "qcom,dsi-phy-28nm-8960";
 			#clock-cells = <1>;
@@ -1255,7 +1284,6 @@
 				};
 			};
 		};
-
 
 		dsi1_phy: dsi-phy@5800200 {
 			compatible = "qcom,dsi-phy-28nm-8960";
