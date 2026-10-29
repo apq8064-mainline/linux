@@ -19,6 +19,11 @@ struct pinctrl_pin_desc;
 					fname##_groups,		\
 					ARRAY_SIZE(fname##_groups))
 
+#define APQ_GPIO_PIN_FUNCTION(fname)					\
+	[APQ_MUX_##fname] = PINCTRL_GPIO_PINFUNCTION(#fname,		\
+					fname##_groups,		\
+					ARRAY_SIZE(fname##_groups))
+
 #define IPQ_PIN_FUNCTION(fname)					\
 	[IPQ_MUX_##fname] = PINCTRL_PINFUNCTION(#fname,		\
 					fname##_groups,		\

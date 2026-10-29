@@ -466,7 +466,7 @@ static const struct pinfunction apq8064_functions[] = {
 	APQ_PIN_FUNCTION(gp_clk_1b),
 	APQ_PIN_FUNCTION(gp_clk_2a),
 	APQ_PIN_FUNCTION(gp_clk_2b),
-	APQ_PIN_FUNCTION(gpio),
+	APQ_GPIO_PIN_FUNCTION(gpio),
 	APQ_PIN_FUNCTION(gsbi1),
 	APQ_PIN_FUNCTION(gsbi2),
 	APQ_PIN_FUNCTION(gsbi3),
