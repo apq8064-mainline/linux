@@ -22324,6 +22324,13 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/power/supply/qcom,pmi8998-charger.yaml
 F:	drivers/power/supply/qcom_smbx.c
 
+QUALCOMM PM8917 DIRECT-CONTROL REGULATORS
+M:	Alexandre MINETTE <contact@alex-min.fr>
+L:	linux-arm-msm@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/regulator/qcom,pm8917-ldo.yaml
+F:	drivers/regulator/qcom-pm8917-regulator.c
+
 QUALCOMM PPE DRIVER
 M:	Luo Jie <jie.luo@oss.qualcomm.com>
 L:	netdev@vger.kernel.org
