@@ -12,6 +12,19 @@ maintainers:
 
 allOf:
   - $ref: dma-controller.yaml#
+  - if:
+      required:
+        - qcom,ee-pipe-mask
+    then:
+      properties:
+        compatible:
+          contains:
+            enum:
+              - qcom,bam-v1.3.0
+              - qcom,bam-v1.4.0
+              - qcom,bam-v1.7.0
+        qcom,ee:
+          maximum: 3
 
 properties:
   compatible:
@@ -68,6 +81,21 @@ properties:
     description:
       Indicates the active Execution Environment identifier (0-7) used in the
       secure world.
+
+  qcom,ee-pipe-mask:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description:
+      Bitmask of pipes owned by the Execution Environment specified in
+      qcom,ee.  The driver programs the per-pipe trust registers so that
+      these pipes are accessible to the local EE/VMID.
+
+  qcom,ee-vmid:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    minimum: 0
+    maximum: 31
+    description:
+      Virtual Machine Identifier (VMID) to use when claiming pipes via
+      qcom,ee-pipe-mask.  Defaults to 0.
 
   qcom,num-ees:
     $ref: /schemas/types.yaml#/definitions/uint32
