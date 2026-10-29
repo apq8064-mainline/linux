@@ -191,6 +191,279 @@ static int slim_get_prate_code(int rate)
 	return -EINVAL;
 }
 
+static int slim_mgr_connect_port_channel(struct slim_stream_runtime *stream,
+				     struct slim_port *port)
+{
+	struct slim_device *sdev = stream->dev;
+	u8 wbuf[2];
+	struct slim_val_inf msg = {0, 2, NULL, wbuf, NULL};
+	u8 mc = SLIM_MSG_MC_CONNECT_SOURCE;
+	DEFINE_SLIM_LDEST_TXN(txn, mc, 6, stream->dev->laddr, &msg);
+
+	if (port->direction == SLIM_PORT_SINK)
+		txn.mc = SLIM_MSG_MC_CONNECT_SINK;
+
+	wbuf[0] = port->id;
+	wbuf[1] = port->ch.id;
+	port->state = SLIM_PORT_UNCONFIGURED;
+
+	return slim_do_transfer(sdev->ctrl, &txn);
+}
+
+static int slim_connect_mgr_port(struct slim_stream_runtime *stream,
+				 struct slim_port *port, int idx)
+{
+	struct slim_device *sdev = stream->dev;
+	u8 wbuf[2];
+	struct slim_val_inf msg = {0, 2, NULL, wbuf, NULL};
+	u8 mc = SLIM_MSG_MC_CONNECT_SOURCE;
+	DEFINE_SLIM_LDEST_TXN(txn, mc, 6, SLIM_LA_MANAGER, &msg);
+
+	if (port->direction == SLIM_PORT_SOURCE)
+		txn.mc = SLIM_MSG_MC_CONNECT_SINK;
+
+	wbuf[0] = idx;
+	wbuf[1] = port->ch.id;
+
+	return slim_do_transfer(sdev->ctrl, &txn);
+}
+
+static int slim_disconnect_mgr_port(struct slim_stream_runtime *stream,
+				    int idx)
+{
+	struct slim_device *sdev = stream->dev;
+	u8 wbuf[1];
+	struct slim_val_inf msg = {0, 1, NULL, wbuf, NULL};
+	u8 mc = SLIM_MSG_MC_DISCONNECT_PORT;
+	DEFINE_SLIM_LDEST_TXN(txn, mc, 5, SLIM_LA_MANAGER, &msg);
+
+	wbuf[0] = idx;
+
+	return slim_do_transfer(sdev->ctrl, &txn);
+}
+
+static int slim_mgr_stream_prepare(struct slim_stream_runtime *rt,
+			struct slim_stream_config *cfg)
+{
+	struct slim_controller *ctrl = rt->dev->ctrl;
+	struct slim_port *port;
+	int num_ports, i, port_id, ret, connected = 0;
+
+	if (!cfg->chs || !cfg->ch_count || !cfg->bps ||
+	    cfg->bps % SLIM_SLOT_LEN_BITS ||
+	    cfg->rate < ctrl->a_framer->superfreq ||
+	    (cfg->port_mask & ~GENMASK(SLIM_DEVICE_MAX_PORTS - 1, 0)) ||
+	    (cfg->direction != SNDRV_PCM_STREAM_PLAYBACK &&
+	     cfg->direction != SNDRV_PCM_STREAM_CAPTURE) ||
+	    cfg->ch_count != hweight_long(cfg->port_mask))
+		return -EINVAL;
+
+	if (rt->ports) {
+		dev_err(&rt->dev->dev, "Stream already Prepared\n");
+		return -EINVAL;
+	}
+
+	num_ports = hweight32(cfg->port_mask);
+	rt->ports = kzalloc_objs(*port, num_ports);
+	if (!rt->ports)
+		return -ENOMEM;
+
+	rt->num_ports = num_ports;
+	rt->rate = cfg->rate;
+	rt->bps = cfg->bps;
+	rt->direction = cfg->direction;
+
+	if (cfg->rate % ctrl->a_framer->superfreq) {
+		/*
+		 * data rate not exactly multiple of super frame,
+		 * use PUSH/PULL protocol
+		 */
+		if (cfg->direction == SNDRV_PCM_STREAM_PLAYBACK)
+			rt->prot = SLIM_PROTO_PUSH;
+		else
+			rt->prot = SLIM_PROTO_PULL;
+	} else {
+		rt->prot = SLIM_PROTO_ISO;
+	}
+
+	rt->ratem = cfg->rate / ctrl->a_framer->superfreq;
+
+	i = 0;
+	for_each_set_bit(port_id, &cfg->port_mask, SLIM_DEVICE_MAX_PORTS) {
+		port = &rt->ports[i];
+		port->state = SLIM_PORT_DISCONNECTED;
+		port->id = port_id;
+		port->ch.id = cfg->chs[i];
+		if (cfg->chs[i] >= SLIM_DEVICE_MAX_CHANNELS) {
+			ret = -EINVAL;
+			goto err_unprepare;
+		}
+		port->ch.data_fmt = SLIM_CH_DATA_FMT_NOT_DEFINED;
+		port->ch.aux_fmt = SLIM_CH_AUX_FMT_NOT_APPLICABLE;
+		port->ch.state = SLIM_CH_STATE_ALLOCATED;
+		port->ch.bps = rt->bps;
+
+		if (cfg->direction == SNDRV_PCM_STREAM_PLAYBACK)
+			port->direction = SLIM_PORT_SINK;
+		else
+			port->direction = SLIM_PORT_SOURCE;
+
+		ret = slim_nextdefine_ch(rt, port);
+		if (ret)
+			goto err_unprepare;
+
+		port->ch.state = SLIM_CH_STATE_DEFINED;
+		mutex_lock(&ctrl->lock);
+		if (ctrl->sched.ch_map[port->ch.id]) {
+			mutex_unlock(&ctrl->lock);
+			ret = -EBUSY;
+			goto err_unprepare;
+		}
+		ctrl->sched.ch_map[port->ch.id] = &port->ch;
+		mutex_unlock(&ctrl->lock);
+
+		i++;
+	}
+
+	/*
+	 * Connect the manager-side data ports during prepare so that the DMA
+	 * channel (e.g. the Qualcomm BAM pipe) is already allocated by the time
+	 * the CPU-side trigger tries to queue descriptors.  The codec-side ports
+	 * are still connected in slim_stream_enable(), keeping activation close
+	 * to the channel reconfiguration.
+	 */
+	for (i = 0; i < num_ports; i++) {
+		ret = slim_connect_mgr_port(rt, &rt->ports[i], i);
+		if (ret)
+			goto err_unprepare;
+		connected++;
+	}
+
+	return 0;
+
+err_unprepare:
+	while (connected--)
+		slim_disconnect_mgr_port(rt, connected);
+	mutex_lock(&ctrl->lock);
+	for (i = 0; i < num_ports; i++) {
+		if (rt->ports[i].ch.id >= 0 &&
+		    rt->ports[i].ch.id < SLIM_DEVICE_MAX_CHANNELS &&
+		    ctrl->sched.ch_map[rt->ports[i].ch.id] == &rt->ports[i].ch)
+			ctrl->sched.ch_map[rt->ports[i].ch.id] = NULL;
+	}
+	mutex_unlock(&ctrl->lock);
+	kfree(rt->ports);
+	rt->ports = NULL;
+	rt->num_ports = 0;
+	return ret;
+}
+
+static int slim_mgr_stream_enable(struct slim_stream_runtime *stream)
+{
+	int ret, i;
+
+	/*
+	 * Connect the codec-side ports before the reconfiguration, matching the
+	 * downstream Qualcomm sequence.  The manager-side ports were already
+	 * connected in slim_stream_prepare() so that their DMA channels are
+	 * allocated before the CPU-side trigger queues descriptors.
+	 */
+	for (i = 0; i < stream->num_ports; i++) {
+		ret = slim_mgr_connect_port_channel(stream, &stream->ports[i]);
+		if (ret)
+			return ret;
+	}
+
+	for (i = 0; i < stream->num_ports; i++) {
+		struct slim_port *port = &stream->ports[i];
+
+		ret = slim_control_ch(stream->dev, port->ch.id, SLIM_CH_ACTIVATE);
+		if (ret)
+			return ret;
+	}
+
+	ret = slim_reconfigure_now(stream->dev);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < stream->num_ports; i++)
+		stream->ports[i].state = SLIM_PORT_CONFIGURED;
+
+	return 0;
+}
+
+static int slim_mgr_stream_disable(struct slim_stream_runtime *stream)
+{
+	int ret, i;
+
+	if (!stream->ports || !stream->num_ports)
+		return -EINVAL;
+
+	for (i = 0; i < stream->num_ports; i++) {
+		struct slim_port *port = &stream->ports[i];
+
+		ret = slim_control_ch(stream->dev, port->ch.id, SLIM_CH_REMOVE);
+		if (ret)
+			return ret;
+	}
+
+	return slim_reconfigure_now(stream->dev);
+}
+
+static int slim_mgr_stream_unprepare(struct slim_stream_runtime *stream)
+{
+	int i, ret = 0;
+
+	if (!stream->ports || !stream->num_ports)
+		return -EINVAL;
+
+	/*
+	 * If the stream is still active, remove its channels from the scheduler
+	 * before tearing down the ports. Some CPU-DAI trigger paths skip
+	 * slim_stream_disable() and call unprepare directly.
+	 */
+	for (i = 0; i < stream->num_ports; i++) {
+		struct slim_port *port = &stream->ports[i];
+
+		if (port->ch.state == SLIM_CH_STATE_ACTIVE) {
+			int err = slim_control_ch(stream->dev, port->ch.id,
+						  SLIM_CH_REMOVE);
+			if (err && err != -ENOTCONN)
+				dev_err(&stream->dev->dev,
+					"unprepare: remove ch:%d failed:%d\n",
+					port->ch.id, err);
+		}
+	}
+
+	ret = slim_reconfigure_now(stream->dev);
+	if (ret)
+		dev_err(&stream->dev->dev,
+			"unprepare: reconfigure removal failed:%d\n", ret);
+
+	for (i = 0; i < stream->num_ports; i++) {
+		int err = slim_disconnect_port(stream, &stream->ports[i]);
+
+		if (err) {
+			dev_err(&stream->dev->dev,
+				"unprepare: disconnect codec port %d failed:%d\n",
+				stream->ports[i].id, err);
+			if (!ret)
+				ret = err;
+		}
+		err = slim_disconnect_mgr_port(stream, i);
+		if (err && !ret)
+			ret = err;
+	}
+
+	/* Reconfiguration failure must not leave pointers into freed ports. */
+	slim_sched_unprepare(stream);
+	kfree(stream->ports);
+	stream->ports = NULL;
+	stream->num_ports = 0;
+
+	return ret;
+}
+
 /**
  * slim_stream_prepare() - Prepare a SLIMbus Stream
  *
@@ -207,6 +480,9 @@ int slim_stream_prepare(struct slim_stream_runtime *rt,
 	struct slim_controller *ctrl = rt->dev->ctrl;
 	struct slim_port *port;
 	int num_ports, i, port_id, prrate;
+
+	if (ctrl->mgr_data_ports)
+		return slim_mgr_stream_prepare(rt, cfg);
 
 	if (rt->ports) {
 		dev_err(&rt->dev->dev, "Stream already Prepared\n");
@@ -363,6 +639,9 @@ int slim_stream_enable(struct slim_stream_runtime *stream)
 	struct slim_controller *ctrl = stream->dev->ctrl;
 	int ret, i;
 
+	if (ctrl->mgr_data_ports)
+		return slim_mgr_stream_enable(stream);
+
 	if (ctrl->enable_stream) {
 		ret = ctrl->enable_stream(stream);
 		if (ret)
@@ -416,6 +695,9 @@ int slim_stream_disable(struct slim_stream_runtime *stream)
 	struct slim_controller *ctrl = stream->dev->ctrl;
 	int ret, i;
 
+	if (ctrl->mgr_data_ports)
+		return slim_mgr_stream_disable(stream);
+
 	if (!stream->ports || !stream->num_ports)
 		return -EINVAL;
 
@@ -448,7 +730,11 @@ EXPORT_SYMBOL_GPL(slim_stream_disable);
  */
 int slim_stream_unprepare(struct slim_stream_runtime *stream)
 {
+	struct slim_controller *ctrl = stream->dev->ctrl;
 	int i;
+
+	if (ctrl->mgr_data_ports)
+		return slim_mgr_stream_unprepare(stream);
 
 	if (!stream->ports || !stream->num_ports)
 		return -EINVAL;

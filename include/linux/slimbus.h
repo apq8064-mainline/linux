@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/completion.h>
 #include <linux/device-id/slim.h>
+#include <linux/list.h>
 
 extern const struct bus_type slimbus_bus;
 
@@ -50,6 +51,8 @@ struct slim_controller;
  * @is_laddr_valid: indicates if the laddr is valid or not
  * @stream_list: List of streams on this device
  * @stream_list_lock: lock to protect the stream list
+ * @mark_define: channels pending definition/activation
+ * @mark_removal: channels pending removal
  *
  * This is the client/device handle returned when a SLIMbus
  * device is registered with a controller.
@@ -63,7 +66,9 @@ struct slim_device {
 	u8			laddr;
 	bool			is_laddr_valid;
 	struct list_head	stream_list;
-	spinlock_t stream_list_lock;
+	spinlock_t		stream_list_lock;
+	struct list_head	mark_define;
+	struct list_head	mark_removal;
 };
 
 #define to_slim_device(d) container_of(d, struct slim_device, dev)

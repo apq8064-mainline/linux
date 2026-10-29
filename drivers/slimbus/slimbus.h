@@ -53,6 +53,8 @@
 
 /* Clock pause Reconfiguration messages */
 #define SLIM_MSG_MC_BEGIN_RECONFIGURATION        0x40
+#define SLIM_MSG_MC_NEXT_SUBFRAME_MODE           0x45
+#define SLIM_MSG_MC_NEXT_CLOCK_GEAR              0x46
 #define SLIM_MSG_MC_NEXT_PAUSE_CLOCK             0x4A
 #define SLIM_MSG_MC_NEXT_DEFINE_CHANNEL          0x50
 #define SLIM_MSG_MC_NEXT_DEFINE_CONTENT          0x51
@@ -85,6 +87,11 @@
 #define SLIM_SL_PER_SUPERFRAME		(SLIM_CL_PER_SUPERFRAME >> 2)
 /* Manager's logical address is set to 0xFF per spec */
 #define SLIM_LA_MANAGER 0xFF
+
+#define SLIM_FRM_SLOTS_PER_SUPERFRAME	16
+#define SLIM_GDE_SLOTS_PER_SUPERFRAME	2
+#define SLIM_MAX_INTR_COEFF_3		(SLIM_SL_PER_SUPERFRAME / 3)
+#define SLIM_MAX_INTR_COEFF_1		SLIM_SL_PER_SUPERFRAME
 
 #define SLIM_MAX_TIDS			256
 /**
@@ -173,11 +180,27 @@ enum slim_clk_state {
  *	scheduling, message bandwidth reservation) is done. Message APIs can
  *	use the bus concurrently when this mutex is held since elemental access
  *	messages can be sent on the bus when reconfiguration is in progress.
+ * @chc1: array of active coefficient-1 channels
+ * @chc3: array of active coefficient-3 channels
+ * @num_cc1: number of active coefficient-1 channels
+ * @num_cc3: number of active coefficient-3 channels
+ * @subfrmcode: current subframe mode code
+ * @usedslots: slots used by all active channels
+ * @msgsl: minimum slots reserved for message bandwidth
+ * @ch_map: map from bus channel number to per-port channel
  */
 struct slim_sched {
 	enum slim_clk_state	clk_state;
 	struct completion	pause_comp;
 	struct mutex		m_reconf;
+	struct slim_channel	*chc1[SLIM_DEVICE_MAX_CHANNELS];
+	struct slim_channel	*chc3[SLIM_DEVICE_MAX_CHANNELS];
+	int			num_cc1;
+	int			num_cc3;
+	u32			subfrmcode;
+	u32			usedslots;
+	u32			msgsl;
+	struct slim_channel	*ch_map[SLIM_DEVICE_MAX_CHANNELS];
 };
 
 /**
@@ -224,8 +247,46 @@ enum slim_channel_state {
 	SLIM_CH_STATE_ASSOCIATED,
 	SLIM_CH_STATE_DEFINED,
 	SLIM_CH_STATE_CONTENT_DEFINED,
+	SLIM_CH_STATE_PENDING_ACTIVE,
 	SLIM_CH_STATE_ACTIVE,
+	SLIM_CH_STATE_PENDING_REMOVAL,
 	SLIM_CH_STATE_REMOVED,
+};
+
+/**
+ * enum slim_transport_protocol: SLIMbus Transport protocol list from
+ *	Table 47 of SLIMbus 2.0 specs.
+ * @SLIM_PROTO_ISO: Isochronous Protocol, no flow control as data rate match
+ *		channel rate flow control embedded in the data.
+ * @SLIM_PROTO_PUSH: Pushed Protocol, includes flow control, Used to carry
+ *		data whose rate	is equal to, or lower than the channel rate.
+ * @SLIM_PROTO_PULL: Pulled Protocol, similar usage as pushed protocol
+ *		but pull is a unicast.
+ * @SLIM_PROTO_LOCKED: Locked Protocol
+ * @SLIM_PROTO_ASYNC_SMPLX: Asynchronous Protocol-Simplex
+ * @SLIM_PROTO_ASYNC_HALF_DUP: Asynchronous Protocol-Half-duplex
+ * @SLIM_PROTO_EXT_SMPLX: Extended Asynchronous Protocol-Simplex
+ * @SLIM_PROTO_EXT_HALF_DUP: Extended Asynchronous Protocol-Half-duplex
+ */
+enum slim_transport_protocol {
+	SLIM_PROTO_ISO = 0,
+	SLIM_PROTO_PUSH,
+	SLIM_PROTO_PULL,
+	SLIM_PROTO_LOCKED,
+	SLIM_PROTO_ASYNC_SMPLX,
+	SLIM_PROTO_ASYNC_HALF_DUP,
+	SLIM_PROTO_EXT_SMPLX,
+	SLIM_PROTO_EXT_HALF_DUP,
+};
+
+enum slim_ch_coeff {
+	SLIM_COEFF_1,
+	SLIM_COEFF_3,
+};
+
+enum slim_ch_control {
+	SLIM_CH_ACTIVATE,
+	SLIM_CH_REMOVE,
 };
 
 /**
@@ -265,6 +326,14 @@ enum slim_ch_aux_bit_fmt {
  * @data_fmt: Data format of channel.
  * @aux_fmt: Aux format for this channel.
  * @state: channel state machine
+ * @coeff: scheduling coefficient (SLIM_COEFF_1 or SLIM_COEFF_3)
+ * @rootexp: root exponent used for scheduling
+ * @seglen: segment length used for scheduling
+ * @interval: current interval in slots
+ * @newintr: new interval computed during scheduling
+ * @offset: current offset in slots
+ * @newoff: new offset computed during scheduling
+ * @def: definition count tracking
  */
 struct slim_channel {
 	int id;
@@ -273,6 +342,16 @@ struct slim_channel {
 	enum slim_ch_data_fmt data_fmt;
 	enum slim_ch_aux_bit_fmt aux_fmt;
 	enum slim_channel_state state;
+	enum slim_ch_coeff coeff;
+	enum slim_transport_protocol prot;
+	unsigned int bps;
+	u8 rootexp;
+	u32 seglen;
+	u32 interval;
+	u32 newintr;
+	u32 offset;
+	u32 newoff;
+	int def;
 };
 
 /**
@@ -288,32 +367,6 @@ struct slim_port {
 	enum slim_port_direction direction;
 	enum slim_port_state state;
 	struct slim_channel ch;
-};
-
-/**
- * enum slim_transport_protocol: SLIMbus Transport protocol list from
- *	Table 47 of SLIMbus 2.0 specs.
- * @SLIM_PROTO_ISO: Isochronous Protocol, no flow control as data rate match
- *		channel rate flow control embedded in the data.
- * @SLIM_PROTO_PUSH: Pushed Protocol, includes flow control, Used to carry
- *		data whose rate	is equal to, or lower than the channel rate.
- * @SLIM_PROTO_PULL: Pulled Protocol, similar usage as pushed protocol
- *		but pull is a unicast.
- * @SLIM_PROTO_LOCKED: Locked Protocol
- * @SLIM_PROTO_ASYNC_SMPLX: Asynchronous Protocol-Simplex
- * @SLIM_PROTO_ASYNC_HALF_DUP: Asynchronous Protocol-Half-duplex
- * @SLIM_PROTO_EXT_SMPLX: Extended Asynchronous Protocol-Simplex
- * @SLIM_PROTO_EXT_HALF_DUP: Extended Asynchronous Protocol-Half-duplex
- */
-enum slim_transport_protocol {
-	SLIM_PROTO_ISO = 0,
-	SLIM_PROTO_PUSH,
-	SLIM_PROTO_PULL,
-	SLIM_PROTO_LOCKED,
-	SLIM_PROTO_ASYNC_SMPLX,
-	SLIM_PROTO_ASYNC_HALF_DUP,
-	SLIM_PROTO_EXT_SMPLX,
-	SLIM_PROTO_EXT_HALF_DUP,
 };
 
 /**
@@ -341,6 +394,16 @@ struct slim_stream_runtime {
 	int num_ports;
 	struct slim_port *ports;
 	struct list_head node;
+};
+
+/**
+ * struct slim_pending_ch - pending channel change entry
+ * @chan: bus channel number
+ * @pending: list node for device pending lists
+ */
+struct slim_pending_ch {
+	u8 chan;
+	struct list_head pending;
 };
 
 /**
@@ -396,6 +459,12 @@ struct slim_stream_runtime {
  *	device'. Interface device is responsible for monitoring the bus and
  *	reporting information such as loss-of-synchronization, data
  *	slot-collision.
+ *
+ * @mgr_data_ports: Set by controllers that own local manager-side data
+ *	ports (e.g. CPU streaming into the bus). When set, the core issues
+ *	CONNECT_SOURCE/SINK and DISCONNECT_PORT messages addressed to the
+ *	manager logical address for each channel in a stream, so that the
+ *	controller can hook up its local port to the channel.
  */
 struct slim_controller {
 	struct device		*dev;
@@ -411,6 +480,7 @@ struct slim_controller {
 	struct idr		tid_idr;
 	spinlock_t		txn_lock;
 	struct slim_sched	sched;
+	bool			mgr_data_ports;
 	int			(*xfer_msg)(struct slim_controller *ctrl,
 					    struct slim_msg_txn *tx);
 	int			(*set_laddr)(struct slim_controller *ctrl,
@@ -432,6 +502,13 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn);
 int slim_ctrl_clk_pause(struct slim_controller *ctrl, bool wakeup, u8 restart);
 int slim_alloc_txn_tid(struct slim_controller *ctrl, struct slim_msg_txn *txn);
 void slim_free_txn_tid(struct slim_controller *ctrl, struct slim_msg_txn *txn);
+
+/* Scheduler helpers */
+void slim_sched_unprepare(struct slim_stream_runtime *stream);
+int slim_nextdefine_ch(struct slim_stream_runtime *stream, struct slim_port *port);
+int slim_control_ch(struct slim_device *sbdev, u8 chan,
+		    enum slim_ch_control chctrl);
+int slim_reconfigure_now(struct slim_device *sbdev);
 
 static inline bool slim_tid_txn(u8 mt, u8 mc)
 {
