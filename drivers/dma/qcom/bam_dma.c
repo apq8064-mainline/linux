@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
+#include <linux/bitfield.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -90,6 +91,7 @@ enum bam_reg {
 	BAM_IRQ_CLR,
 	BAM_IRQ_EN,
 	BAM_CNFG_BITS,
+	BAM_TRUST_REG,
 	BAM_IRQ_SRCS_EE,
 	BAM_IRQ_SRCS_MSK_EE,
 	BAM_P_CTRL,
@@ -105,6 +107,7 @@ enum bam_reg {
 	BAM_P_DESC_FIFO_ADDR,
 	BAM_P_EVNT_GEN_TRSHLD,
 	BAM_P_FIFO_SIZES,
+	BAM_P_TRUST_REG,
 };
 
 struct reg_offset_data {
@@ -139,6 +142,8 @@ static const struct reg_offset_data bam_v1_3_reg_info[] = {
 	[BAM_P_DESC_FIFO_ADDR]	= { 0x101C, 0x00, 0x40, 0x00 },
 	[BAM_P_EVNT_GEN_TRSHLD]	= { 0x1028, 0x00, 0x40, 0x00 },
 	[BAM_P_FIFO_SIZES]	= { 0x1020, 0x00, 0x40, 0x00 },
+	[BAM_TRUST_REG]		= { 0x0FF0, 0x00, 0x00, 0x00 },
+	[BAM_P_TRUST_REG]	= { 0x0030, 0x80, 0x00, 0x00 },
 };
 
 static const struct reg_offset_data bam_v1_4_reg_info[] = {
@@ -168,6 +173,8 @@ static const struct reg_offset_data bam_v1_4_reg_info[] = {
 	[BAM_P_DESC_FIFO_ADDR]	= { 0x181C, 0x00, 0x1000, 0x00 },
 	[BAM_P_EVNT_GEN_TRSHLD]	= { 0x1828, 0x00, 0x1000, 0x00 },
 	[BAM_P_FIFO_SIZES]	= { 0x1820, 0x00, 0x1000, 0x00 },
+	[BAM_TRUST_REG]		= { 0x0070, 0x00, 0x00, 0x00 },
+	[BAM_P_TRUST_REG]	= { 0x1030, 0x1000, 0x00, 0x00 },
 };
 
 static const struct reg_offset_data bam_v1_7_reg_info[] = {
@@ -197,6 +204,8 @@ static const struct reg_offset_data bam_v1_7_reg_info[] = {
 	[BAM_P_DESC_FIFO_ADDR]	= { 0x1381C, 0x00, 0x1000, 0x00 },
 	[BAM_P_EVNT_GEN_TRSHLD]	= { 0x13828, 0x00, 0x1000, 0x00 },
 	[BAM_P_FIFO_SIZES]	= { 0x13820, 0x00, 0x1000, 0x00 },
+	[BAM_TRUST_REG]		= { 0x00070, 0x00, 0x00, 0x00 },
+	[BAM_P_TRUST_REG]	= { 0x13030, 0x1000, 0x00, 0x00 },
 };
 
 static const struct reg_offset_data bam_v2_0_reg_info[] = {
@@ -318,6 +327,16 @@ static const struct reg_offset_data bam_v2_0_reg_info[] = {
 #define P_AUTO_EOB_SEL_256	(1 << P_AUTO_EOB_SEL_SHIFT)
 #define P_AUTO_EOB_SEL_128	(2 << P_AUTO_EOB_SEL_SHIFT)
 #define P_AUTO_EOB_SEL_64	(3 << P_AUTO_EOB_SEL_SHIFT)
+
+/* TRUST_REG */
+#define BAM_TRUST_EE		GENMASK(2, 0)
+#define BAM_TRUST_VMID		GENMASK(12, 8)
+#define BAM_TRUST_RST_BLOCK	BIT(7)
+
+/* P_TRUST_REGn */
+#define P_TRUST_EE		GENMASK(1, 0)
+#define P_TRUST_VMID		GENMASK(12, 8)
+
 #define P_PREFETCH_LIMIT_SHIFT	9
 #define P_PREFETCH_LIMIT_32	(0 << P_PREFETCH_LIMIT_SHIFT)
 #define P_PREFETCH_LIMIT_16	(1 << P_PREFETCH_LIMIT_SHIFT)
@@ -417,6 +436,8 @@ struct bam_device {
 
 	/* execution environment ID, from DT */
 	u32 ee;
+	u32 vmid;
+	u32 pipe_mask;
 	bool controlled_remotely;
 	bool powered_remotely;
 	u32 active_channels;
@@ -445,6 +466,28 @@ static inline void __iomem *bam_addr(struct bam_device *bdev, u32 pipe,
 		r.pipe_mult * pipe +
 		r.evnt_mult * pipe +
 		r.ee_mult * bdev->ee;
+}
+
+static void bam_set_ownership(struct bam_device *bdev)
+{
+	u32 pipe;
+
+	if (!bdev->pipe_mask)
+		return;
+
+	writel_relaxed(FIELD_PREP(BAM_TRUST_EE, bdev->ee) |
+		       FIELD_PREP(BAM_TRUST_VMID, bdev->vmid) |
+		       BAM_TRUST_RST_BLOCK,
+		       bam_addr(bdev, 0, BAM_TRUST_REG));
+
+	for (pipe = 0; pipe < min_t(u32, bdev->num_channels, 32); pipe++) {
+		if (!(bdev->pipe_mask & BIT(pipe)))
+			continue;
+
+		writel_relaxed(FIELD_PREP(P_TRUST_EE, bdev->ee) |
+			       FIELD_PREP(P_TRUST_VMID, bdev->vmid),
+			       bam_addr(bdev, pipe, BAM_P_TRUST_REG));
+	}
 }
 
 /**
@@ -483,6 +526,8 @@ static void bam_reset(struct bam_device *bdev)
 
 	/* unmask global bam interrupt */
 	writel_relaxed(BAM_IRQ_MSK, bam_addr(bdev, 0, BAM_IRQ_SRCS_MSK_EE));
+
+	bam_set_ownership(bdev);
 }
 
 /**
@@ -783,6 +828,8 @@ static int bam_dma_terminate_all(struct dma_chan *chan)
 
 	return 0;
 }
+
+
 
 /**
  * bam_pause - Pause DMA channel
@@ -1276,6 +1323,15 @@ static int bam_dma_probe(struct platform_device *pdev)
 		dev_err(bdev->dev, "Execution environment unspecified\n");
 		return ret;
 	}
+
+	of_property_read_u32(pdev->dev.of_node, "qcom,ee-vmid", &bdev->vmid);
+	of_property_read_u32(pdev->dev.of_node, "qcom,ee-pipe-mask",
+			     &bdev->pipe_mask);
+
+	if (bdev->pipe_mask && (!bdev->layout[BAM_TRUST_REG].base_offset ||
+				bdev->ee > 3 || bdev->vmid > 31))
+		return dev_err_probe(bdev->dev, -EINVAL,
+				     "unsupported local ownership configuration\n");
 
 	bdev->controlled_remotely = of_property_read_bool(pdev->dev.of_node,
 						"qcom,controlled-remotely");
