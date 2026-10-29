@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/sound/qcom,apq8064-tabla.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Qualcomm APQ8064 with WCD9310 audio
+
+maintainers:
+  - Alexandre MINETTE <contact@alex-min.fr>
+
+description:
+  Sound card using the APQ8064 Apps-managed SLIMbus controller and a
+  WCD9310 tabla2x codec. LINEOUT2/4 drive an external speaker amplifier,
+  and the codec directly drives the call earpiece and headphones.
+
+properties:
+  compatible:
+    const: qcom,apq8064-tabla-snd-card
+
+  model:
+    $ref: /schemas/types.yaml#/definitions/string
+
+  codec:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: WCD9310 PGD device on the SLIMbus controller
+
+  hp-det-gpios:
+    maxItems: 1
+    description: Headphone jack insertion detection
+
+  speaker-en-gpios:
+    maxItems: 1
+    description: Active-high enable for the external speaker amplifier
+
+required:
+  - compatible
+  - model
+  - codec
+  - speaker-en-gpios
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    sound {
+        compatible = "qcom,apq8064-tabla-snd-card";
+        model = "apq8064-tabla";
+        codec = <&tabla_codec>;
+        speaker-en-gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
+    };
