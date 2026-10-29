@@ -114,6 +114,9 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	int ret;
 	unsigned long time_left;
 
+	/* Keep error cleanup valid even if runtime resume fails. */
+	txn->tid = 0;
+
 	/*
 	 * do not vote for runtime-PM if the transactions are part of clock
 	 * pause sequence
@@ -126,27 +129,27 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 
 	if (!clk_pause_msg) {
 		ret = pm_runtime_get_sync(ctrl->dev);
-		if (ctrl->sched.clk_state != SLIM_CLK_ACTIVE) {
+		if (ret < 0 || ctrl->sched.clk_state != SLIM_CLK_ACTIVE) {
 			dev_err(ctrl->dev, "ctrl wrong state:%d, ret:%d\n",
 				ctrl->sched.clk_state, ret);
+			if (ret >= 0)
+				ret = -EIO;
 			goto slim_xfer_err;
 		}
 	}
-	/* Initialize tid to invalid value */
-	txn->tid = 0;
 	need_tid = slim_tid_txn(txn->mt, txn->mc);
 
 	if (need_tid) {
 		ret = slim_alloc_txn_tid(ctrl, txn);
 		if (ret)
-			return ret;
+			goto slim_xfer_err;
 
 		if (!txn->msg->comp)
 			txn->comp = &done;
 	}
 
 	ret = ctrl->xfer_msg(ctrl, txn);
-	if (ret == -ETIMEDOUT) {
+	if (ret && need_tid) {
 		slim_free_txn_tid(ctrl, txn);
 	} else if (!ret && need_tid && !txn->msg->comp) {
 		unsigned long ms = txn->rl + HZ;
@@ -164,7 +167,7 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 			txn->mt, txn->mc, txn->la, ret);
 
 slim_xfer_err:
-	if (!clk_pause_msg && (txn->tid == 0  || ret == -ETIMEDOUT)) {
+	if (!clk_pause_msg && (txn->tid == 0 || ret)) {
 		/*
 		 * remove runtime-pm vote if this was TX only, or
 		 * if there was error during this transaction
