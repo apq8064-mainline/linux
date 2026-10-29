@@ -22047,6 +22047,16 @@ W:	https://linuxtv.org
 Q:	http://patchwork.linuxtv.org/project/linux-media/list/
 F:	drivers/media/tuners/qt1010*
 
+QUALCOMM APQ8064 AUDIO AND WCD9310 CODEC
+M:	Alexandre MINETTE <contact@alex-min.fr>
+L:	alsa-devel@alsa-project.org (moderated for non-subscribers)
+S:	Maintained
+F:	Documentation/devicetree/bindings/sound/qcom,apq8064-tabla.yaml
+F:	Documentation/devicetree/bindings/sound/qcom,wcd9310.yaml
+F:	sound/soc/codecs/wcd9310.c
+F:	sound/soc/qcom/apq8064-slim.*
+F:	sound/soc/qcom/apq8064-tabla.c
+
 QUALCOMM ATH12K WIRELESS DRIVER
 M:	Jeff Johnson <jjohnson@kernel.org>
 L:	linux-wireless@vger.kernel.org

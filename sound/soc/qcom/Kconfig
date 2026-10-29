@@ -252,4 +252,15 @@ config SND_SOC_X1E80100
 	  X1E80100 SoC-based systems.
 	  Say Y or M if you want to use audio device on this SoCs.
 
+config SND_SOC_APQ8064_TABLA
+	tristate "APQ8064 with WCD9310 audio"
+	depends on OF && GPIOLIB && COMMON_CLK
+	depends on SLIM_QCOM_CTRL
+	select SND_SOC_WCD9310
+	help
+	  Support Apps-managed SLIMbus playback on APQ8064 systems with a
+	  WCD9310 codec, including the Samsung Galaxy S4. The host uses BAM
+	  DMA without the downstream DSP audio stack. Say Y or M to enable
+	  the speaker, earpiece and headphone playback paths on these boards.
+
 endif #SND_SOC_QCOM
