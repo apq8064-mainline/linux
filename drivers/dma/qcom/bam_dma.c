@@ -829,7 +829,13 @@ static int bam_dma_terminate_all(struct dma_chan *chan)
 	return 0;
 }
 
+static void bam_dma_synchronize(struct dma_chan *chan)
+{
+	struct bam_chan *bchan = to_bam_chan(chan);
 
+	/* A completion tasklet may already hold descriptors off the lists. */
+	vchan_synchronize(&bchan->vc);
+}
 
 /**
  * bam_pause - Pause DMA channel
@@ -1415,6 +1421,7 @@ static int bam_dma_probe(struct platform_device *pdev)
 	bdev->common.device_pause = bam_pause;
 	bdev->common.device_resume = bam_resume;
 	bdev->common.device_terminate_all = bam_dma_terminate_all;
+	bdev->common.device_synchronize = bam_dma_synchronize;
 	bdev->common.device_issue_pending = bam_issue_pending;
 	bdev->common.device_tx_status = bam_tx_status;
 	bdev->common.dev = bdev->dev;
