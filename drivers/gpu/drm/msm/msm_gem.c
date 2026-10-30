@@ -115,9 +115,21 @@ void msm_gem_vma_put(struct drm_gem_object *obj)
 		return;
 
 	if (priv->gpu && priv->gpu->vm_shared) {
+		struct drm_exec exec;
+
+		/* A final dma-buf release can happen after the last handle close. */
 		dma_resv_wait_timeout(obj->resv, DMA_RESV_USAGE_BOOKKEEP, false,
 				      MAX_SCHEDULE_TIMEOUT);
-		put_iova_spaces(obj, priv->gpu->vm, true, "vma_put");
+
+		/*
+		 * An export or flink open may have acquired a new handle while
+		 * we waited.  Recheck the refcount under the VM and object locks
+		 * before tearing the shared mapping down.
+		 */
+		msm_gem_lock_vm_and_obj(&exec, obj, priv->gpu->vm);
+		if (!atomic_read(&to_msm_bo(obj)->vma_ref))
+			put_iova_spaces_locked(obj, priv->gpu->vm, true, "vma_put");
+		drm_exec_fini(&exec);     /* drop locks */
 	}
 
 	if (!priv->kms)
@@ -674,6 +686,7 @@ static bool is_kms_vm(struct drm_gpuvm *vm)
  */
 void msm_gem_unpin_iova(struct drm_gem_object *obj, struct drm_gpuvm *vm)
 {
+	struct msm_drm_private *priv = obj->dev->dev_private;
 	struct drm_gpuva *vma;
 	struct drm_exec exec;
 
@@ -682,7 +695,9 @@ void msm_gem_unpin_iova(struct drm_gem_object *obj, struct drm_gpuvm *vm)
 	if (vma) {
 		msm_gem_unpin_locked(obj);
 	}
-	if (!is_kms_vm(vm))
+	if (!is_kms_vm(vm) &&
+	    !(priv->gpu && vm == priv->gpu->vm &&
+	      atomic_read(&to_msm_bo(obj)->vma_ref)))
 		put_iova_spaces_locked(obj, vm, true, "close");
 	drm_exec_fini(&exec);     /* drop locks */
 }

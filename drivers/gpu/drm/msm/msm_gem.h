@@ -262,8 +262,10 @@ struct msm_gem_object {
 	 * VMA will not prevent the BO from being freed.  (Or rather, the
 	 * reference loop is harmless in this case.)
 	 *
-	 * When the @vma_ref drops to zero, then kms->vm VMA will be
-	 * torn down.
+	 * When the @vma_ref drops to zero, the global GPU VM (if shared
+	 * between contexts) and kms->vm VMAs will be torn down.  Closing one
+	 * file's handle must not release a shared mapping still used through
+	 * another handle or dma_buf.
 	 */
 	atomic_t vma_ref;
 };
