@@ -1195,30 +1195,46 @@ static void dsi_set_tx_power_mode(int mode, struct msm_dsi_host *msm_host)
 	dsi_write(msm_host, REG_DSI_CMD_DMA_CTRL, data);
 }
 
-static void dsi_wait4video_done(struct msm_dsi_host *msm_host)
+/*
+ * Wait for a frame-complete (VIDEO_DONE) interrupt for up to @timeout_ms.
+ * Returns true if VIDEO_DONE was signalled within the timeout.
+ */
+static bool dsi_wait4video_done(struct msm_dsi_host *msm_host,
+				unsigned int timeout_ms)
 {
-	u32 ret = 0;
-	struct device *dev = &msm_host->pdev->dev;
+	unsigned int ret = 0;
 
 	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_VIDEO_DONE, 1);
 
 	reinit_completion(&msm_host->video_comp);
 
 	ret = wait_for_completion_timeout(&msm_host->video_comp,
-			msecs_to_jiffies(70));
-
-	if (ret == 0)
-		DRM_DEV_ERROR(dev, "wait for video done timed out\n");
+			msecs_to_jiffies(timeout_ms));
 
 	dsi_intr_ctrl(msm_host, DSI_IRQ_MASK_VIDEO_DONE, 0);
+
+	return ret != 0;
 }
 
-static void dsi_wait4video_eng_busy(struct msm_dsi_host *msm_host)
+/*
+ * In video mode a command transfer is only transmitted during the blanking
+ * line low period (BLLP), so before triggering the cmd DMA we have to make
+ * sure a BLLP will actually come.
+ *
+ * Returns true if video mode stays usable for the pending transfer (either
+ * the engine is idle, or video is genuinely streaming and we waited for the
+ * end of the current frame plus BLLP). Returns false when the video engine
+ * is stuck/busy but no frame completes: MDP4 is not driving video (e.g.
+ * during panel init/shutdown, or after the CRTC was stopped) so no BLLP will
+ * ever occur. In that case the caller must drop VID_MODE_EN for the
+ * transfer and send the command in command mode instead.
+ */
+static bool dsi_wait4video_eng_busy(struct msm_dsi_host *msm_host)
 {
 	u32 data;
 
 	if (!(msm_host->mode_flags & MIPI_DSI_MODE_VIDEO))
-		return;
+		return true;
 
 	data = dsi_read(msm_host, REG_DSI_STATUS0);
 
@@ -1228,13 +1244,28 @@ static void dsi_wait4video_eng_busy(struct msm_dsi_host *msm_host)
 	 * data already, so no need to wait in those cases
 	 */
 	if (!(data & DSI_STATUS0_VIDEO_MODE_ENGINE_BUSY))
-		return;
+		return true;
 
 	if (msm_host->power_on && msm_host->enabled) {
-		dsi_wait4video_done(msm_host);
-		/* delay 4 ms to skip BLLP */
-		usleep_range(2000, 4000);
+		/*
+		 * If video is really streaming the engine signals VIDEO_DONE
+		 * within one frame period. If it does not, the engine is
+		 * stuck without MDP4 data and waiting for a BLLP would hang
+		 * the transfer (70ms video-done wait + 200ms cmd dma timeout
+		 * per command, which is what left the panel in an undefined
+		 * state on blank/wake).
+		 */
+		bool got = dsi_wait4video_done(msm_host, 25);
+
+		if (got) {
+			/* delay 4 ms to skip BLLP */
+			usleep_range(2000, 4000);
+			return true;
+		}
+		return false;
 	}
+
+	return true;
 }
 
 int dsi_tx_buf_alloc_6g(struct msm_dsi_host *msm_host, int size)
@@ -1452,7 +1483,17 @@ static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
 
 	reinit_completion(&msm_host->dma_comp);
 
-	dsi_wait4video_eng_busy(msm_host);
+	/*
+	 * If the video engine is not actually streaming, no BLLP will occur
+	 * and the cmd DMA would stall forever in video mode. Drop VID_MODE_EN
+	 * for this transfer so the command goes out in command mode; the
+	 * original DSI_CTRL (with VID_MODE_EN) is restored by
+	 * msm_dsi_host_xfer_restore().
+	 */
+	if (!dsi_wait4video_eng_busy(msm_host)) {
+		dsi_write(msm_host, REG_DSI_CTRL,
+			  dsi_read(msm_host, REG_DSI_CTRL) & ~DSI_CTRL_VID_MODE_EN);
+	}
 
 	triggered = msm_dsi_manager_cmd_xfer_trigger(
 						msm_host->id, dma_base, len);
