@@ -204,6 +204,152 @@ static void wcn36xx_feat_caps_info(struct wcn36xx *wcn)
 	}
 }
 
+/*
+ * After an AP-initiated deauth the firmware's TX path can wedge in either
+ * of two ways:
+ *
+ *  1. The TX-complete (EOP) state machine stops: frames are accepted but
+ *     never completed, so the TX ring fills up, the mac80211 queues are
+ *     stopped and no further frame reaches the air.
+ *
+ *  2. The RF transmit path dies: the firmware still reports EOP (so the
+ *     ring drains and the queues are never stopped) but the frames never
+ *     reach the air.  The only visible symptom is that the station can no
+ *     longer (re)associate: it keeps sending auth frames that are
+ *     "completed" but never acknowledged, so every authentication times
+ *     out.
+ *
+ * Scans and RX keep working in both cases, so the radio looks healthy, but
+ * the device can never reconnect.  The only way to recover is to
+ * re-initialise the WLAN block, i.e. the same sequence a driver reload
+ * performs.
+ */
+#define WCN36XX_TX_STUCK_TIMEOUT_MS	10000
+/*
+ * Case 2 above leaves no TX-ring trace (the ring drains on EOP), so it is
+ * detected at the association level: we were associated, then lost the link
+ * and have been unable to re-associate for this long.  A healthy chip
+ * re-associates within a few seconds, so this is a generous bound that
+ * avoids false positives on slow reconnects.
+ */
+#define WCN36XX_ASSOC_LOST_TIMEOUT_MS	120000
+
+static void wcn36xx_tx_recover(struct wcn36xx *wcn, const char *reason)
+{
+	struct wcn36xx_vif *vif_priv;
+	struct ieee80211_vif *vif;
+	bool deferred = false;
+
+	mutex_lock(&wcn->conf_mutex);
+
+	/*
+	 * Only recover while no vif is associated and no scan is in flight:
+	 * re-initialising the WLAN block wipes all firmware vif state
+	 * (BSS, keys, BA sessions), which would desynchronise mac80211
+	 * while a link is up.  Defer in that case; the watchdog retries
+	 * and userspace can fall back to a driver reload.
+	 */
+	list_for_each_entry(vif_priv, &wcn->vif_list, list) {
+		if (vif_priv->sta_assoc) {
+			deferred = true;
+			break;
+		}
+	}
+
+	/* Nothing to recover if no vif is present (e.g. interface down). */
+	if (list_empty(&wcn->vif_list))
+		deferred = true;
+
+	mutex_lock(&wcn->scan_lock);
+	if (wcn->scan_req || wcn->sw_scan)
+		deferred = true;
+	mutex_unlock(&wcn->scan_lock);
+
+	if (deferred) {
+		wcn36xx_dbg(WCN36XX_DBG_MAC,
+			    "TX stuck, recovery deferred (assoc/scan in progress)\n");
+		goto out;
+	}
+
+	/*
+	 * Reset the association-lost timer so the watchdog does not
+	 * re-trigger while the re-initialisation (and the subsequent
+	 * re-association) is in progress.  A successful re-association
+	 * updates it again; if it fails the watchdog retries after
+	 * WCN36XX_ASSOC_LOST_TIMEOUT_MS.
+	 */
+	wcn->last_assoc_jiffies = jiffies;
+
+	wcn36xx_err("%s - re-initialising WLAN block\n", reason);
+
+	ieee80211_stop_queues(wcn->hw);
+	__skb_queue_purge(&wcn->amsdu);
+	wcn36xx_dxe_tx_purge(wcn);
+
+	/* Same sequence a driver reload performs */
+	if (wcn36xx_smd_stop(wcn))
+		wcn36xx_err("smd_stop failed during recovery\n");
+	wcn36xx_dxe_deinit(wcn);
+	if (wcn36xx_smd_start(wcn))
+		wcn36xx_err("smd_start failed during recovery\n");
+	if (wcn36xx_dxe_init(wcn))
+		wcn36xx_err("dxe_init failed during recovery\n");
+
+	/*
+	 * The firmware vif state was wiped; re-register the vifs so the
+	 * firmware sta/dpu indices used for TX are valid again.
+	 */
+	list_for_each_entry(vif_priv, &wcn->vif_list, list) {
+		vif = wcn36xx_priv_to_vif(vif_priv);
+		vif_priv->pw_state = WCN36XX_FULL_POWER;
+		if (wcn36xx_smd_add_sta_self(wcn, vif))
+			wcn36xx_err("add_sta_self failed during recovery\n");
+	}
+
+	/* The rings were re-initialised empty; clear the stale stop state. */
+	wcn->queues_stopped = false;
+	wcn->queues_stopped_jiffies = 0;
+
+	ieee80211_wake_queues(wcn->hw);
+
+out:
+	mutex_unlock(&wcn->conf_mutex);
+}
+
+static void wcn36xx_tx_watchdog_work(struct work_struct *work)
+{
+	struct wcn36xx *wcn = container_of(to_delayed_work(work),
+					   struct wcn36xx, tx_watchdog);
+
+	/*
+	 * Case 1: the TX-complete (EOP) state machine has stopped - the
+	 * ring is full, the queues are stopped and it has stayed that way
+	 * for WCN36XX_TX_STUCK_TIMEOUT_MS.
+	 */
+	if (wcn->queues_stopped &&
+	    wcn->queues_stopped_jiffies &&
+	    time_after(jiffies, wcn->queues_stopped_jiffies +
+			 msecs_to_jiffies(WCN36XX_TX_STUCK_TIMEOUT_MS)) &&
+	    !wcn36xx_dxe_tx_is_empty(wcn)) {
+		wcn36xx_tx_recover(wcn, "TX ring stuck");
+	} else if (wcn->last_assoc_jiffies &&
+		   time_after(jiffies, wcn->last_assoc_jiffies +
+				  msecs_to_jiffies(WCN36XX_ASSOC_LOST_TIMEOUT_MS))) {
+		/*
+		 * Case 2: the RF transmit path is dead - frames complete
+		 * (EOP) but never reach the air, so the ring drains and the
+		 * queues are never stopped.  The only symptom is that we
+		 * were associated, lost the link and can no longer
+		 * (re)associate.  The recovery defers while a vif is
+		 * associated or a scan is in flight, so triggering on
+		 * association loss alone is safe.
+		 */
+		wcn36xx_tx_recover(wcn, "association lost, TX appears dead");
+	}
+
+	schedule_delayed_work(&wcn->tx_watchdog, msecs_to_jiffies(2000));
+}
+
 static int wcn36xx_start(struct ieee80211_hw *hw)
 {
 	struct wcn36xx *wcn = hw->priv;
@@ -266,6 +412,8 @@ static int wcn36xx_start(struct ieee80211_hw *hw)
 	spin_lock_init(&wcn->dxe_lock);
 	spin_lock_init(&wcn->survey_lock);
 
+	schedule_delayed_work(&wcn->tx_watchdog, msecs_to_jiffies(2000));
+
 	return 0;
 
 out_smd_stop:
@@ -285,6 +433,8 @@ static void wcn36xx_stop(struct ieee80211_hw *hw, bool suspend)
 	struct wcn36xx *wcn = hw->priv;
 
 	wcn36xx_dbg(WCN36XX_DBG_MAC, "mac stop\n");
+
+	cancel_delayed_work_sync(&wcn->tx_watchdog);
 
 	mutex_lock(&wcn->scan_lock);
 	if (wcn->scan_req) {
@@ -869,6 +1019,7 @@ static void wcn36xx_bss_info_changed(struct ieee80211_hw *hw,
 				     vif->cfg.aid);
 
 			vif_priv->sta_assoc = true;
+			wcn->last_assoc_jiffies = jiffies;
 
 			/*
 			 * Holding conf_mutex ensures mutal exclusion with
@@ -1587,6 +1738,17 @@ static int wcn36xx_probe(struct platform_device *pdev)
 	mutex_init(&wcn->hal_mutex);
 	mutex_init(&wcn->scan_lock);
 	__skb_queue_head_init(&wcn->amsdu);
+
+	/*
+	 * Must be initialised once here (not in wcn36xx_start, which can
+	 * run repeatedly across suspend/resume) so that the delayed_work
+	 * timer carries a valid callback before the first
+	 * schedule_delayed_work().  Scheduling an uninitialised
+	 * delayed_work leaves the work PENDING with no pool and no pending
+	 * timer, which later makes cancel_delayed_work_sync() spin forever
+	 * in work_grab_pending().
+	 */
+	INIT_DELAYED_WORK(&wcn->tx_watchdog, wcn36xx_tx_watchdog_work);
 
 	wcn->hal_buf = devm_kmalloc(wcn->dev, WCN36XX_HAL_BUF_SIZE, GFP_KERNEL);
 	if (!wcn->hal_buf) {

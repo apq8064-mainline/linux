@@ -275,6 +275,20 @@ struct wcn36xx {
 	/* For synchronization of DXE resources from BH, IRQ and WQ contexts */
 	spinlock_t	dxe_lock;
 	bool                    queues_stopped;
+	unsigned long		queues_stopped_jiffies;
+
+	/*
+	 * Jiffies of the last time a vif associated.  Also reset by
+	 * wcn36xx_tx_recover() to put the association-lost watchdog on a
+	 * cooldown.  Used to detect the dead-radio wedge where the firmware
+	 * still completes TX (EOP) but never transmits, so the TX ring
+	 * drains and queues_stopped is never set: the only visible symptom
+	 * is that we can no longer (re)associate.
+	 */
+	unsigned long		last_assoc_jiffies;
+
+	/* Stuck-TX recovery watchdog, see wcn36xx_tx_watchdog_work() */
+	struct delayed_work	tx_watchdog;
 
 	/* Memory pools */
 	struct wcn36xx_dxe_mem_pool mgmt_mem_pool;

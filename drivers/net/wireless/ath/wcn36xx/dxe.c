@@ -439,6 +439,7 @@ static void reap_tx_dxes(struct wcn36xx *wcn, struct wcn36xx_dxe_ch *ch)
 
 			if (wcn->queues_stopped) {
 				wcn->queues_stopped = false;
+				wcn->queues_stopped_jiffies = 0;
 				ieee80211_wake_queues(wcn->hw);
 			}
 
@@ -768,6 +769,7 @@ int wcn36xx_dxe_tx_frame(struct wcn36xx *wcn,
 	if (NULL != ctl_skb->skb) {
 		ieee80211_stop_queues(wcn->hw);
 		wcn->queues_stopped = true;
+		wcn->queues_stopped_jiffies = jiffies;
 		spin_unlock_irqrestore(&ch->lock, flags);
 		return -EBUSY;
 	}
@@ -895,6 +897,75 @@ int wcn36xx_dxe_tx_flush(struct wcn36xx *wcn)
 	} while (++i < 100);
 
 	return -EBUSY;
+}
+
+bool wcn36xx_dxe_tx_is_empty(struct wcn36xx *wcn)
+{
+	return _wcn36xx_dxe_tx_channel_is_empty(&wcn->dxe_tx_l_ch) &&
+		_wcn36xx_dxe_tx_channel_is_empty(&wcn->dxe_tx_h_ch);
+}
+
+/*
+ * Purge all frames pending in the TX rings, completing them to mac80211 as
+ * if they had been transmitted.  Used to reset the TX state when the
+ * firmware stops completing TX operations (stuck TX).
+ *
+ * Called with the mac80211 queues stopped.
+ */
+void wcn36xx_dxe_tx_purge(struct wcn36xx *wcn)
+{
+	struct wcn36xx_dxe_ch *chs[2];
+	struct wcn36xx_dxe_ctl *ctl, *start;
+	int i;
+
+	chs[0] = &wcn->dxe_tx_l_ch;
+	chs[1] = &wcn->dxe_tx_h_ch;
+
+	spin_lock(&wcn->dxe_lock);
+	if (wcn->tx_ack_skb) {
+		struct ieee80211_tx_info *info =
+			IEEE80211_SKB_CB(wcn->tx_ack_skb);
+
+		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
+		ieee80211_tx_status_irqsafe(wcn->hw, wcn->tx_ack_skb);
+		wcn->tx_ack_skb = NULL;
+	}
+	spin_unlock(&wcn->dxe_lock);
+
+	for (i = 0; i < 2; i++) {
+		struct wcn36xx_dxe_ch *ch = chs[i];
+		unsigned long flags;
+
+		spin_lock_irqsave(&ch->lock, flags);
+		start = ch->head_blk_ctl;
+		ctl = start;
+		do {
+			if (ctl->skb) {
+				struct ieee80211_tx_info *info =
+					IEEE80211_SKB_CB(ctl->skb);
+
+				dma_unmap_single(wcn->dev,
+						 ctl->desc->src_addr_l,
+						 ctl->skb->len, DMA_TO_DEVICE);
+				if (info->flags &
+				    IEEE80211_TX_CTL_REQ_TX_STATUS) {
+					info->flags |=
+					IEEE80211_TX_STAT_NOACK_TRANSMITTED;
+					ieee80211_tx_status_irqsafe(wcn->hw,
+								    ctl->skb);
+				} else {
+					ieee80211_free_txskb(wcn->hw, ctl->skb);
+				}
+				ctl->skb = NULL;
+			}
+			ctl = ctl->next;
+		} while (ctl != start);
+		ch->tail_blk_ctl = start;
+		spin_unlock_irqrestore(&ch->lock, flags);
+	}
+
+	wcn->queues_stopped = false;
+	wcn->queues_stopped_jiffies = 0;
 }
 
 int wcn36xx_dxe_init(struct wcn36xx *wcn)
