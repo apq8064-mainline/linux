@@ -799,11 +799,21 @@ res_en_fail:
 
 void msm_dsi_phy_disable(struct msm_dsi_phy *phy)
 {
-	if (!phy || !phy->cfg->ops.disable)
+	if (!phy)
 		return;
 
-	phy->cfg->ops.disable(phy);
-
+	/*
+	 * Do NOT write PHY_CTRL_0=0 (ops.disable) here. On this SoC the PHY's
+	 * only supply (vddio, PMIC lvs7) is shared with the DSI controller and
+	 * the touchscreen, so a screen blank never actually cuts the rail.
+	 * Soft-disabling the 28nm 8960 D-PHY while it stays powered wedges its
+	 * analog lane state: it then cannot drive LP (command) transmission on
+	 * the next wake (LP FIFO stalls, every DCS command times out).
+	 *
+	 * Leave the PHY enabled in LP-11 (its natural idle state after the
+	 * off-sequence) and only suspend its clocks, so the analog state is
+	 * preserved in a clean, re-usable form.
+	 */
 	regulator_bulk_disable(phy->cfg->num_regulators, phy->supplies);
 	pm_runtime_put(&phy->pdev->dev);
 }
