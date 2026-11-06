@@ -39,6 +39,16 @@ properties:
            3600000, 3700000]
     default: 3600000
 
+  maxim,charge-input-current-limit-microamp:
+    description: CHGIN input current limit, in 20 mA steps rounded down.
+    minimum: 60000
+    maximum: 2540000
+
+  maxim,fast-charge-current-microamp:
+    description: Fast charge current, in 100/3 mA steps rounded down.
+    minimum: 100000
+    maximum: 2100000
+
   maxim,thermal-regulation-celsius:
     description: |
       Temperature in Celsius for entering high temperature charging mode.
