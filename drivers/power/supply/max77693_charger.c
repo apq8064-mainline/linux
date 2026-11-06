@@ -24,6 +24,8 @@ struct max77693_charger {
 
 	u32 constant_volt;
 	u32 min_system_volt;
+	u32 input_current_uamp;
+	u32 fast_charge_uamp;
 	u32 thermal_regulation_temp;
 	u32 batttery_overcurrent;
 	u32 charge_input_threshold_volt;
@@ -664,6 +666,26 @@ static int max77693_reg_init(struct max77693_charger *chg)
 	if (ret)
 		return ret;
 
+	if (chg->input_current_uamp) {
+		/* CHGIN input current limit, 20 mA steps */
+		ret = regmap_update_bits(chg->max77693->regmap,
+				MAX77693_CHG_REG_CHG_CNFG_09,
+				CHG_CNFG_09_CHGIN_ILIM_MASK,
+				chg->input_current_uamp / 20000);
+		if (ret)
+			return ret;
+	}
+
+	if (chg->fast_charge_uamp) {
+		/* fast charge current, 33.3 mA steps */
+		ret = regmap_update_bits(chg->max77693->regmap,
+				MAX77693_CHG_REG_CHG_CNFG_02,
+				CHG_CNFG_02_CC_MASK,
+				chg->fast_charge_uamp * 3 / 100000);
+		if (ret)
+			return ret;
+	}
+
 	ret = max77693_set_thermal_regulation_temp(chg,
 			chg->thermal_regulation_temp);
 	if (ret)
@@ -702,6 +724,14 @@ static int max77693_dt_init(struct device *dev, struct max77693_charger *chg)
 	if (of_property_read_u32(np, "maxim,battery-overcurrent-microamp",
 			&chg->batttery_overcurrent))
 		chg->batttery_overcurrent = DEFAULT_BATTERY_OVERCURRENT;
+
+	if (of_property_read_u32(np, "maxim,charge-input-current-limit-microamp",
+			&chg->input_current_uamp))
+		chg->input_current_uamp = 0;
+
+	if (of_property_read_u32(np, "maxim,fast-charge-current-microamp",
+			&chg->fast_charge_uamp))
+		chg->fast_charge_uamp = 0;
 
 	if (of_property_read_u32(np, "maxim,charge-input-threshold-microvolt",
 			&chg->charge_input_threshold_volt))
