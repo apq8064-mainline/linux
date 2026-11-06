@@ -91,6 +91,20 @@
 				safeout2-supply = <&esafeout2_reg>;
 			};
 
+			charger {
+				compatible = "maxim,max77693-charger";
+				maxim,constant-microvolt = <4350000>;
+				maxim,min-system-microvolt = <3600000>;
+				/*
+				 * Input current limit for the CHGIN buck.
+				 * 500 mA is safe on any USB host port; the
+				 * downstream MUIC-aware stack starts at 900 mA
+				 * on dedicated chargers and backs off on UVLO.
+				 */
+				maxim,charge-input-current-limit-microamp = <500000>;
+				maxim,fast-charge-current-microamp = <800000>;
+			};
+
 			regulators {
 				esafeout1_reg: ESAFEOUT1 {
 					regulator-name = "ESAFEOUT1";
