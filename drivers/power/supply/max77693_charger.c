@@ -253,6 +253,7 @@ static enum power_supply_property max77693_charger_props[] = {
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
+	POWER_SUPPLY_PROP_SCOPE,
 };
 
 static int max77693_charger_get_property(struct power_supply *psy,
@@ -290,6 +291,15 @@ static int max77693_charger_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_MANUFACTURER:
 		val->strval = max77693_charger_manufacturer;
+		break;
+	case POWER_SUPPLY_PROP_SCOPE:
+		/* This is a charger-state interface, not a battery
+		 * information source: it reports no capacity, energy
+		 * or voltage, so it must not be presented as the
+		 * system battery (upower ignores device-scoped
+		 * supplies without capacity).
+		 */
+		val->intval = POWER_SUPPLY_SCOPE_DEVICE;
 		break;
 	default:
 		return -EINVAL;
