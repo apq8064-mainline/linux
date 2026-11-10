@@ -104,11 +104,13 @@
 #define TABLA_2_A_MICB_4_INT_RBIAS	0x13e
 #define TABLA_A_RX_LINE_CNP_EN		0x1ca
 #define TABLA_A_RX_LINE_1_GAIN		0x1cd
+#define TABLA_A_RX_LINE_1_DAC_CTL	0x1cf
 #define TABLA_A_RX_LINE_1_STATUS	0x1d0
 #define TABLA_A_RX_LINE_2_GAIN		0x1d1
 #define TABLA_A_RX_LINE_2_DAC_CTL	0x1d3
 #define TABLA_A_RX_LINE_2_STATUS	0x1d4
 #define TABLA_A_RX_LINE_3_GAIN		0x1d5
+#define TABLA_A_RX_LINE_3_DAC_CTL	0x1d7
 #define TABLA_A_RX_LINE_3_STATUS	0x1d8
 #define TABLA_A_RX_LINE_4_GAIN		0x1d9
 #define TABLA_A_RX_LINE_4_DAC_CTL	0x1db
@@ -140,6 +142,7 @@
 #define TABLA_A_CDC_RX6_VOL_CTL_B2_CTL	0x2df
 #define TABLA_A_CDC_CONN_RX1_B1_CTL	0x380
 #define TABLA_A_CDC_CONN_RX2_B1_CTL	0x383
+#define TABLA_A_CDC_CONN_RX3_B1_CTL	0x386
 #define TABLA_A_CDC_CONN_RX5_B1_CTL	0x38b
 #define TABLA_A_CDC_CONN_RX_SB_B1_CTL	0x3ae
 #define TABLA_A_CDC_CONN_RX_SB_B2_CTL	0x3af
@@ -311,6 +314,7 @@ static int tabla_event_reset_interpolator(struct snd_soc_dapm_widget *w,
 	static const u16 rx_vol_reg[] = {
 		[0] = TABLA_A_CDC_RX1_VOL_CTL_B2_CTL,
 		[1] = TABLA_A_CDC_RX2_VOL_CTL_B2_CTL,
+		[2] = TABLA_A_CDC_RX3_VOL_CTL_B2_CTL,
 		[4] = TABLA_A_CDC_RX5_VOL_CTL_B2_CTL,
 		[5] = TABLA_A_CDC_RX6_VOL_CTL_B2_CTL,
 	};
@@ -492,8 +496,8 @@ static int tabla_event_hph_pa(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static const char * const rx_mix1_text[] = { "ZERO", "RX1" };
-static const unsigned int rx_mix1_values[] = { 0, 5 };
+static const char * const rx_mix1_text[] = { "ZERO", "RX1", "RX2" };
+static const unsigned int rx_mix1_values[] = { 0, 5, 6 };
 
 static const char * const rx_dsm_text[] = {
 	"CIC_OUT", "DSM_INV"
@@ -503,6 +507,9 @@ static SOC_VALUE_ENUM_SINGLE_DECL(rx1_mix1_inp1_enum, TABLA_A_CDC_CONN_RX1_B1_CT
 					0, 0xf, rx_mix1_text, rx_mix1_values);
 
 static SOC_VALUE_ENUM_SINGLE_DECL(rx2_mix1_inp1_enum, TABLA_A_CDC_CONN_RX2_B1_CTL,
+					0, 0xf, rx_mix1_text, rx_mix1_values);
+
+static SOC_VALUE_ENUM_SINGLE_DECL(rx3_mix1_inp1_enum, TABLA_A_CDC_CONN_RX3_B1_CTL,
 					0, 0xf, rx_mix1_text, rx_mix1_values);
 
 static SOC_VALUE_ENUM_SINGLE_DECL(rx5_mix1_inp1_enum, TABLA_A_CDC_CONN_RX5_B1_CTL,
@@ -515,6 +522,8 @@ static const struct snd_kcontrol_new rx1_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX1 MIX1 INP1 Mux", rx1_mix1_inp1_enum);
 static const struct snd_kcontrol_new rx2_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX2 MIX1 INP1 Mux", rx2_mix1_inp1_enum);
+static const struct snd_kcontrol_new rx3_mix1_inp1_mux =
+	SOC_DAPM_ENUM("RX3 MIX1 INP1 Mux", rx3_mix1_inp1_enum);
 static const struct snd_kcontrol_new rx5_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX5 MIX1 INP1 Mux", rx5_mix1_inp1_enum);
 static const struct snd_kcontrol_new rx6_dsm_mux =
@@ -529,7 +538,13 @@ static const struct snd_kcontrol_new tabla_snd_controls[] = {
 	SOC_SINGLE("HPHL Volume", TABLA_A_RX_HPH_L_GAIN, 0, 12, 1),
 	SOC_SINGLE("HPHR Volume", TABLA_A_RX_HPH_R_GAIN, 0, 12, 1),
 
+	SOC_SINGLE_TLV("LINEOUT1 Volume", TABLA_A_RX_LINE_1_GAIN, 0, 12, 1,
+		       line_gain),
+
 	SOC_SINGLE_TLV("LINEOUT2 Volume", TABLA_A_RX_LINE_2_GAIN, 0, 12, 1,
+		       line_gain),
+
+	SOC_SINGLE_TLV("LINEOUT3 Volume", TABLA_A_RX_LINE_3_GAIN, 0, 12, 1,
 		       line_gain),
 
 	SOC_SINGLE_TLV("LINEOUT4 Volume", TABLA_A_RX_LINE_4_GAIN, 0, 12, 1,
@@ -540,6 +555,10 @@ static const struct snd_kcontrol_new tabla_snd_controls[] = {
 
 	SOC_SINGLE_S8_TLV("RX2 Digital Volume",
 			  TABLA_A_CDC_RX2_VOL_CTL_B2_CTL, -84, 40,
+			  digital_gain),
+
+	SOC_SINGLE_S8_TLV("RX3 Digital Volume",
+			  TABLA_A_CDC_RX3_VOL_CTL_B2_CTL, -84, 40,
 			  digital_gain),
 
 	SOC_SINGLE_S8_TLV("RX5 Digital Volume",
@@ -623,6 +642,20 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 			   7, 0, tabla_event_rx_dac,
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
+	SND_SOC_DAPM_MUX("RX3 MIX1 INP1 Mux", SND_SOC_NOPM, 0, 0,
+			 &rx3_mix1_inp1_mux),
+	SND_SOC_DAPM_MIXER_E("RX3 MIX1", TABLA_A_CDC_CLK_RX_B1_CTL, 2, 0,
+			     NULL, 0, tabla_event_reset_interpolator,
+			     SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU),
+
+	SND_SOC_DAPM_DAC_E("LINEOUT1 DAC", NULL, TABLA_A_RX_LINE_1_DAC_CTL,
+			   7, 0, tabla_event_rx_dac,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+
+	SND_SOC_DAPM_DAC_E("LINEOUT3 DAC", NULL, TABLA_A_RX_LINE_3_DAC_CTL,
+			   7, 0, tabla_event_rx_dac,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+
 	SND_SOC_DAPM_PGA_E("LINEOUT2 PA", TABLA_A_RX_LINE_CNP_EN, 1, 0,
 			   NULL, 0, tabla_event_lineout_pa,
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
@@ -633,7 +666,21 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			   SND_SOC_DAPM_POST_PMD),
 
+	SND_SOC_DAPM_PGA_E("LINEOUT1 PA", TABLA_A_RX_LINE_CNP_EN, 0, 0,
+			   NULL, 0, tabla_event_lineout_pa,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_POST_PMD),
+
+	SND_SOC_DAPM_PGA_E("LINEOUT3 PA", TABLA_A_RX_LINE_CNP_EN, 2, 0,
+			   NULL, 0, tabla_event_lineout_pa,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_POST_PMD),
+
+	SND_SOC_DAPM_OUTPUT("LINEOUT1"),
+
 	SND_SOC_DAPM_OUTPUT("LINEOUT2"),
+
+	SND_SOC_DAPM_OUTPUT("LINEOUT3"),
 
 	SND_SOC_DAPM_OUTPUT("LINEOUT4"),
 	SND_SOC_DAPM_OUTPUT("EAR"),
@@ -647,9 +694,18 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "RX5 MIX1", NULL, "RX5 MIX1 INP1 Mux" },
 	{ "RX6 DSM MUX", "DSM_INV", "RX5 MIX1" },
 
-	/* Differential lineout pair through RX5/RX6. */
+	/* Differential lineout pair through RX5/RX6 (top speaker amp). */
 	{ "LINEOUT2 DAC", NULL, "RX5 MIX1" },
 	{ "LINEOUT4 DAC", NULL, "RX6 DSM MUX" },
+
+	/*
+	 * Bottom speaker amp pair: LINEOUT1 through the RX3 chain and
+	 * LINEOUT3 from RX5, mirroring downstream's ext-spek bottom routing.
+	 */
+	{ "RX3 MIX1 INP1 Mux", "RX1", "SLIM RX" },
+	{ "RX3 MIX1", NULL, "RX3 MIX1 INP1 Mux" },
+	{ "LINEOUT1 DAC", NULL, "RX3 MIX1" },
+	{ "LINEOUT3 DAC", NULL, "RX5 MIX1" },
 
 	/*
 	 * Earpiece: the selected mono SLIMbus playback port into the RX1
@@ -661,8 +717,13 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "EAR DAC", NULL, "RX1 MIX2" },
 	{ "EAR", NULL, "EAR DAC" },
 
-	/* Both headphone channels consume the mono SLIMbus stream. */
-	{ "RX2 MIX1 INP1 Mux", "RX1", "SLIM RX" },
+	/*
+	 * The CPU DAI transmits two SLIM slots: slot 0 (RX1, left) and
+	 * slot 1 (RX2, right). HPHL takes slot 0 (see RX1 MIX1 INP1 Mux
+	 * above); HPHR takes slot 1 so the two headphone channels are
+	 * independent.
+	 */
+	{ "RX2 MIX1 INP1 Mux", "RX2", "SLIM RX" },
 	{ "RX2 MIX1", NULL, "RX2 MIX1 INP1 Mux" },
 	{ "RX2 MIX2", NULL, "RX2 MIX1" },
 	{ "RX1 CHAIN", NULL, "RX1 MIX2" },
@@ -680,14 +741,20 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 
 	{ "LINEOUT2 PA", NULL, "LINEOUT2 DAC" },
 	{ "LINEOUT4 PA", NULL, "LINEOUT4 DAC" },
+	{ "LINEOUT1 PA", NULL, "LINEOUT1 DAC" },
+	{ "LINEOUT3 PA", NULL, "LINEOUT3 DAC" },
 
 	{ "LINEOUT2", NULL, "LINEOUT2 PA" },
 	{ "LINEOUT4", NULL, "LINEOUT4 PA" },
+	{ "LINEOUT1", NULL, "LINEOUT1 PA" },
+	{ "LINEOUT3", NULL, "LINEOUT3 PA" },
 
 	{ "RX1 MIX2", NULL, "RX_BIAS" },
 	{ "RX1 MIX2", NULL, "CDC CLK" },
 	{ "RX5 MIX1", NULL, "RX_BIAS" },
 	{ "RX5 MIX1", NULL, "CDC CLK" },
+	{ "RX3 MIX1", NULL, "RX_BIAS" },
+	{ "RX3 MIX1", NULL, "CDC CLK" },
 	{ "RX6 DSM MUX", NULL, "CDC CLK" },
 
 	{ "CP", NULL, "RX_BIAS" },
@@ -700,6 +767,8 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	 */
 	{ "LINEOUT2 DAC", NULL, "RX_BIAS" },
 	{ "LINEOUT4 DAC", NULL, "RX_BIAS" },
+	{ "LINEOUT1 DAC", NULL, "RX_BIAS" },
+	{ "LINEOUT3 DAC", NULL, "RX_BIAS" },
 
 };
 
@@ -724,17 +793,34 @@ static const struct snd_soc_component_driver tabla_component_driver = {
 	.num_dapm_routes	= ARRAY_SIZE(tabla_dapm_routes),
 };
 
+/* Number of RX slave ports used for the (up to) 2-channel headphone path. */
+#define TABLA_IFC_RX_PORT_COUNT		2
+
 static int tabla_ifc_port_enable(struct tabla *tabla, bool enable)
 {
-	int ret;
+	int ret, i;
 
-	if (enable) {
-		ret = regmap_write(tabla->ifc_regmap, TABLA_IFC_RX_MCH_BASE, 1);
+	/*
+	 * Each RX channel lands on its own SLIM slave port: channel 0 on
+	 * port 10 (RX1), channel 1 on port 11 (RX2). The multichannel
+	 * mask (bits 0 and 1 set for the two-channel group) and the port
+	 * enable must be programmed on every port in the group, or the
+	 * other channel is unaware of the group and stays silent.
+	 */
+	for (i = 0; i < TABLA_IFC_RX_PORT_COUNT; i++) {
+		if (enable) {
+			ret = regmap_write(tabla->ifc_regmap,
+					   TABLA_IFC_RX_MCH_BASE + 4 * i, 3);
+			if (ret)
+				return ret;
+		}
+		ret = regmap_write(tabla->ifc_regmap,
+				TABLA_IFC_PORT_CFG_BASE + i,
+					    enable ? TABLA_IFC_PORT_WM_ENABLE : 0);
 		if (ret)
 			return ret;
 	}
-	return regmap_write(tabla->ifc_regmap, TABLA_IFC_PORT_CFG_BASE,
-			    enable ? TABLA_IFC_PORT_WM_ENABLE : 0);
+	return 0;
 }
 
 static int tabla_dai_hw_params(struct snd_pcm_substream *substream,
@@ -744,9 +830,22 @@ static int tabla_dai_hw_params(struct snd_pcm_substream *substream,
 	struct tabla *tabla = dev_get_drvdata(dai->dev);
 	int ret;
 
-	if (params_rate(params) != 48000 || params_channels(params) != 1 ||
+	if (params_rate(params) != 48000 ||
+	    (params_channels(params) != 1 && params_channels(params) != 2) ||
 	    params_format(params) != SNDRV_PCM_FORMAT_S16_LE)
 		return -EINVAL;
+	/*
+	 * Re-assert the RX2 -> HPHR routing on every stream start.  The
+	 * system-wide ALSA state restore (alsa-restore.service) replays
+	 * whatever the state file held after the last shutdown, and a
+	 * stale "RX2 MIX1 INP1 Mux" value there silently kills the right
+	 * channel because DAPM only powers the RX2 chain when the mux
+	 * register matches the route table.
+	 */
+	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_CONN_RX2_B1_CTL,
+				 0x0f, 0x06);
+	if (ret)
+		return ret;
 	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX1_B5_CTL,
 				 0xe0, 0x60);
 	if (ret)
@@ -794,10 +893,14 @@ static int tabla_dai_set_channel_map(struct snd_soc_dai *dai,
 				     unsigned int rx_num,
 				     const unsigned int *rx_slot)
 {
-	/* The initial playback interface exposes the first SLIM RX channel. */
-	if (tx_num || rx_num != 1 || !rx_slot || rx_slot[0] != 138)
+	/* The playback interface exposes one or two SLIM RX channels. */
+	if (tx_num || !rx_slot)
 		return -EINVAL;
-	return 0;
+	if (rx_num == 1)
+		return rx_slot[0] == 138 ? 0 : -EINVAL;
+	if (rx_num == 2)
+		return (rx_slot[0] == 138 && rx_slot[1] == 139) ? 0 : -EINVAL;
+	return -EINVAL;
 }
 
 static const struct snd_soc_dai_ops tabla_dai_ops = {
@@ -813,7 +916,7 @@ static struct snd_soc_dai_driver tabla_dai = {
 		.rates = SNDRV_PCM_RATE_48000,
 		.formats = SNDRV_PCM_FMTBIT_S16_LE,
 		.channels_min = 1,
-		.channels_max = 1,
+		.channels_max = 2,
 	},
 	.ops = &tabla_dai_ops,
 };
@@ -948,13 +1051,19 @@ static int tabla_init_regs(struct regmap *regmap)
 		return ret;
 
 	/*
-	 * Route the only supported SLIM RX stream to each output chain before
-	 * DAPM creates the mux paths. Board pin switches select the active output.
+	 * Route the SLIM RX slots to the output chains before DAPM creates the
+	 * mux paths.  The mux registers must agree with the DAPM routes: DAPM
+	 * only powers a chain when the register selects the source named in the
+	 * route table.  HPHL/LINEOUT/EAR use slot 0 ("RX1"); HPHR uses slot 1
+	 * ("RX2") so the two headphone channels are independent.
 	 */
 	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX1_B1_CTL, 0x0f, 0x05);
 	if (ret)
 		return ret;
-	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX2_B1_CTL, 0x0f, 0x05);
+	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX2_B1_CTL, 0x0f, 0x06);
+	if (ret)
+		return ret;
+	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX3_B1_CTL, 0x0f, 0x05);
 	if (ret)
 		return ret;
 	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX5_B1_CTL, 0x0f, 0x05);
@@ -1204,65 +1313,50 @@ static int tabla_slim_probe(struct slim_device *sdev)
 				    tabla->supplies);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to enable supplies\n");
-
 	tabla->powered = true;
 
-	/* GPIO descriptor values are logical: 1 asserts the active-low reset. */
-	tabla->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(tabla->reset)) {
-		ret = dev_err_probe(dev, PTR_ERR(tabla->reset),
-				    "failed to get reset gpio\n");
-		goto err_disable;
-	}
-	usleep_range(5000, 5500);
-	msleep(20);
-	ret = gpiod_set_value_cansleep(tabla->reset, 1);
-	if (ret)
-		goto err_disable;
-	msleep(20);
-	/* Reset clears any logical addresses assigned before driver probe. */
-	if (sdev->is_laddr_valid)
-		slim_report_absent(sdev);
-	if (tabla->ifc_sdev->is_laddr_valid)
-		slim_report_absent(tabla->ifc_sdev);
-
-	ret = gpiod_set_value_cansleep(tabla->reset, 0);
-	if (ret)
-		goto err_disable;
-	msleep(20);
-
+	/* MCLK is the audio master clock; enable it up front. */
 	tabla->mclk = devm_clk_get(dev, "mclk");
-	if (IS_ERR(tabla->mclk)) {
-		ret = dev_err_probe(dev, PTR_ERR(tabla->mclk),
-				    "failed to get mclk\n");
-		goto err_disable;
-	}
-
+	if (IS_ERR(tabla->mclk))
+		return dev_err_probe(dev, PTR_ERR(tabla->mclk),
+				     "failed to get mclk\n");
 	ret = clk_set_rate(tabla->mclk, TABLA_MCLK_RATE);
 	if (ret) {
 		dev_err_probe(dev, ret, "failed to set mclk rate\n");
 		goto err_disable;
 	}
-
 	ret = clk_prepare_enable(tabla->mclk);
 	if (ret) {
 		dev_err_probe(dev, ret, "failed to enable mclk\n");
 		goto err_disable;
 	}
-
 	tabla->mclk_enabled = true;
 	ret = devm_add_action_or_reset(dev, tabla_slim_disable_hw, tabla);
 	if (ret)
-		return ret;
+		goto err_disable;
 
 	/*
-	 * If the device was already announced on the bus before we probed
-	 * (the CPU-managed controller enumerates slaves at controller probe
-	 * time), the core's slim_device_update_status() early-returns and
-	 * our device_status callback is never invoked. Run the status path
-	 * here in that case; it is guarded against double registration.
+	 * On flo the codec self-starts: the 1.8V S4 rail is always-on and
+	 * the reset line is deasserted by default, so the WCD9310 reports
+	 * present on the SLIM bus before this driver probes. Driving the
+	 * reset here would kill the already-working codec and it does not
+	 * reliably re-enumerate afterwards. So wait for it to be (or become)
+	 * present and bind without touching the reset line.
 	 */
+	ret = pm_runtime_resume_and_get(sdev->dev.parent);
+	if (ret < 0) {
+		dev_err_probe(dev, ret, "failed to resume slimbus controller\n");
+		goto err_disable;
+	}
+	for (i = 0; i < 50; i++) {
+		if (sdev->status == SLIM_DEVICE_STATUS_UP)
+			break;
+		usleep_range(10000, 11000);
+	}
+	pm_runtime_put_sync(sdev->dev.parent);
+
 	if (sdev->status == SLIM_DEVICE_STATUS_UP) {
+		dev_info(dev, "codec already present, binding without reset\n");
 		ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
 		if (ret)
 			goto err_disable;
@@ -1270,31 +1364,40 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	}
 
 	/*
-	 * The codec needs the SLIMbus controller running so it can report
-	 * present and the core can assign a logical address. Keep it active
-	 * while we wait, otherwise the bus may autosuspend and the codec
-	 * never enumerates.
+	 * The codec did not self-start. Deassert the reset line (active-low,
+	 * so logical 0 releases it) and give it a chance to come up.
 	 */
+	dev_info(dev, "codec not present, deasserting reset\n");
+	tabla->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(tabla->reset)) {
+		ret = dev_err_probe(dev, PTR_ERR(tabla->reset),
+				    "failed to get reset gpio\n");
+		goto err_disable;
+	}
+	msleep(20);
+
 	ret = pm_runtime_resume_and_get(sdev->dev.parent);
 	if (ret < 0) {
 		dev_err_probe(dev, ret, "failed to resume slimbus controller\n");
 		goto err_disable;
 	}
-
 	for (i = 0; i < 50; i++) {
-		if (sdev->status == SLIM_DEVICE_STATUS_UP) {
-			pm_runtime_put_sync(sdev->dev.parent);
-			ret = tabla_slim_status(sdev,
-						SLIM_DEVICE_STATUS_UP);
-			if (ret)
-				goto err_disable;
-			return 0;
-		}
+		if (sdev->status == SLIM_DEVICE_STATUS_UP)
+			break;
 		usleep_range(10000, 11000);
 	}
-
 	pm_runtime_put_sync(sdev->dev.parent);
-	ret = -EPROBE_DEFER;
+
+	if (sdev->status != SLIM_DEVICE_STATUS_UP) {
+		dev_err(dev, "codec did not report present after 500ms\n");
+		ret = -EPROBE_DEFER;
+		goto err_disable;
+	}
+
+	ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
+	if (ret)
+		goto err_disable;
+	return 0;
 
 err_disable:
 	tabla_slim_disable_hw(tabla);

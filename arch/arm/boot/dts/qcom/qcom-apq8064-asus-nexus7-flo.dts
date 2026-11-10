@@ -2,6 +2,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/clock/qcom,lcc-msm8960.h>
 
 #include "qcom-apq8064-v2.0.dtsi"
 #include "pm8821.dtsi"
@@ -77,6 +78,16 @@
 				mode-recovery = <0x77665502>;
 			};
 		};
+	};
+
+	sound {
+		compatible = "qcom,apq8064-tabla-snd-card";
+		model = "apq8064-tabla";
+		codec = <&tabla_codec>;
+		speaker-en-gpios = <&pm8921_gpio 19 GPIO_ACTIVE_HIGH>;
+		speaker-bottom-en-gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spk_en_state>, <&spk_en2_state>;
 	};
 };
 
@@ -425,11 +436,91 @@
 	};
 };
 
+&slimbus {
+	pinctrl-names = "default";
+	pinctrl-0 = <&slimbus_default_state>;
+	status = "okay";
+
+	/*
+	 * A second TX channel for the second SLIM manager port (BAM pipe 25),
+	 * used for the right audio channel in stereo playback.
+	 */
+	dmas = <&slimbam 24>, <&slimbam 25>;
+	dma-names = "tx0", "tx1";
+
+	tabla_ifd: codec@0,0 {
+		compatible = "slim217,60";
+		reg = <0 0>;
+	};
+
+	tabla_codec: codec@1,0 {
+		compatible = "slim217,60";
+		reg = <1 0>;
+
+		clocks = <&lcc CODEC_I2S_SPKR_OSR_CLK>;
+		clock-names = "mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cdc_mclk_state>;
+
+		reset-gpios = <&pm8921_gpio 34 GPIO_ACTIVE_LOW>;
+		slim-ifc-dev = <&tabla_ifd>;
+		#sound-dai-cells = <0>;
+
+		cdc-vdd-cp-supply = <&pm8921_s4>;
+		cdc-vdda-rx-supply = <&pm8921_s4>;
+		cdc-vdda-tx-supply = <&pm8921_s4>;
+		vddio-cdc-supply = <&pm8921_s4>;
+		vddd-cdc-d-supply = <&pm8921_l25>;
+		cdc-vdda-a-1p2v-supply = <&pm8921_l25>;
+	};
+};
+
+&slimbam {
+	status = "okay";
+};
+
+&tlmm_pinmux {
+	slimbus_default_state: slimbus-default-state {
+		pins = "gpio40", "gpio41";
+		function = "slimbus";
+		drive-strength = <8>;
+		bias-bus-hold;
+	};
+
+	cdc_mclk_state: cdc-mclk-state {
+		pins = "gpio39";
+		function = "codec_spkr_i2s";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+};
+
 &pm8921_gpio {
 	volume_keys_pin_a: volume-keys-active {
 		pins = "gpio4", "gpio38";
 		function = "normal";
 		bias-disable;
 		qcom,no-inversion;
+	};
+
+	spk_en_state: spk-en-state {
+		pins = "gpio19";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8921_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+		drive-push-pull;
+		bias-disable;
+		output-low;
+	};
+
+	spk_en2_state: spk-en2-state {
+		pins = "gpio18";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8921_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_MED>;
+		drive-push-pull;
+		bias-disable;
+		output-low;
 	};
 };

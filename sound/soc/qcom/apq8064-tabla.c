@@ -7,7 +7,6 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/property.h>
-#include <sound/jack.h>
 #include <sound/soc.h>
 
 #include "apq8064-slim.h"
@@ -19,10 +18,76 @@ struct apq8064_tabla {
 	struct snd_soc_dai_link_component codec;
 	struct snd_soc_dai_link_component platform;
 	struct gpio_desc *spk_en;
-	struct snd_soc_jack headphone_jack;
-	struct snd_soc_jack_pin headphone_pin;
-	struct snd_soc_jack_gpio headphone_gpio;
+	struct gpio_desc *spk_en2;
 };
+
+/*
+ * The flo has no external headphone-jack GPIO: the original hardware relied
+ * on the WCD9310 codec's internal MBHC for detection, which this SLIMbus
+ * driver does not wire up. Instead, the active output route is selected
+ * manually via the "Audio Output" control: 0 = Speaker, 1 = Headphone.
+ *
+ * Picking Headphone disables the Speaker pin, so DAPM powers down the
+ * external speaker amp (its event deasserts the amp enable GPIOs); picking
+ * Speaker does the reverse.
+ */
+static int audio_out_mode;
+
+static const char *const audio_out_texts[] = { "Speaker", "Headphone" };
+
+static const struct soc_enum audio_out_enum = {
+	.items = ARRAY_SIZE(audio_out_texts),
+	.mask = 1,
+	.texts = audio_out_texts,
+};
+
+static int audio_out_get(struct snd_kcontrol *kcontrol,
+			 struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.enumerated.item[0] = audio_out_mode;
+	return 0;
+}
+
+static int audio_out_put(struct snd_kcontrol *kcontrol,
+			 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_dapm_context *dapm = snd_soc_card_to_dapm(card);
+	int mode, ret;
+
+	if (ucontrol->value.enumerated.item[0] >= ARRAY_SIZE(audio_out_texts))
+		return -EINVAL;
+
+	mode = ucontrol->value.enumerated.item[0];
+	if (mode == audio_out_mode)
+		return 1;
+
+	/*
+	 * Switch the active output pin under the DAPM lock so the pin change
+	 * and its power sequencing happen atomically.
+	 */
+	snd_soc_dapm_mutex_lock(dapm);
+	if (mode) {
+		ret = snd_soc_dapm_disable_pin_unlocked(dapm, "Speaker");
+		if (!ret)
+			ret = snd_soc_dapm_enable_pin_unlocked(dapm,
+							       "Headphone");
+	} else {
+		ret = snd_soc_dapm_disable_pin_unlocked(dapm, "Headphone");
+		if (!ret)
+			ret = snd_soc_dapm_enable_pin_unlocked(dapm,
+							       "Speaker");
+	}
+	if (!ret)
+		ret = snd_soc_dapm_sync_unlocked(dapm);
+	snd_soc_dapm_mutex_unlock(dapm);
+	if (ret)
+		return ret;
+
+	dev_info(card->dev, "audio output: %s\n", audio_out_texts[mode]);
+	audio_out_mode = mode;
+	return 1;
+}
 
 static int apq8064_tabla_spk_event(struct snd_soc_dapm_widget *w,
 				   struct snd_kcontrol *kcontrol, int event)
@@ -35,14 +100,19 @@ static int apq8064_tabla_spk_event(struct snd_soc_dapm_widget *w,
 				      event == SND_SOC_DAPM_PRE_PMU);
 	if (ret)
 		return ret;
+	if (priv->spk_en2) {
+		ret = gpiod_set_value_cansleep(priv->spk_en2,
+					      event == SND_SOC_DAPM_PRE_PMU);
+		if (ret)
+			return ret;
+	}
 	usleep_range(4000, 4500);
 	return 0;
 }
 
 static const struct snd_kcontrol_new apq8064_tabla_controls[] = {
-	SOC_DAPM_PIN_SWITCH("Speaker"),
-	SOC_DAPM_PIN_SWITCH("Earpiece"),
-	SOC_DAPM_PIN_SWITCH("Headphone"),
+	SOC_ENUM_EXT("Audio Output", audio_out_enum, audio_out_get,
+		     audio_out_put),
 };
 
 static const struct snd_soc_dapm_widget apq8064_tabla_widgets[] = {
@@ -56,8 +126,11 @@ static const struct snd_soc_dapm_widget apq8064_tabla_widgets[] = {
 };
 
 static const struct snd_soc_dapm_route apq8064_tabla_routes[] = {
+	/* Top amp: LINEOUT2/4 bridge.  Bottom amp: LINEOUT1/3 bridge. */
 	{ "Speaker Amplifier", NULL, "LINEOUT2" },
 	{ "Speaker Amplifier", NULL, "LINEOUT4" },
+	{ "Speaker Amplifier", NULL, "LINEOUT1" },
+	{ "Speaker Amplifier", NULL, "LINEOUT3" },
 	{ "Speaker", NULL, "Speaker Amplifier" },
 	{ "Earpiece", NULL, "EAR" },
 	{ "Headphone", NULL, "HPHL" },
@@ -66,9 +139,7 @@ static const struct snd_soc_dapm_route apq8064_tabla_routes[] = {
 
 static int apq8064_tabla_link_init(struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_card *card = rtd->card;
-	struct snd_soc_dapm_context *dapm = snd_soc_card_to_dapm(card);
-	struct apq8064_tabla *priv = snd_soc_card_get_drvdata(card);
+	struct snd_soc_dapm_context *dapm = snd_soc_card_to_dapm(rtd->card);
 	const unsigned int rx_slot = 138;
 	int ret;
 
@@ -77,45 +148,12 @@ static int apq8064_tabla_link_init(struct snd_soc_pcm_runtime *rtd)
 	if (ret)
 		return ret;
 
-	/* Start with the rear speaker; other outputs are selected explicitly. */
-	ret = snd_soc_dapm_enable_pin(dapm, "Speaker");
-	if (ret)
-		return ret;
+	/* Speaker is the default output; the "Audio Output" control switches
+	 * to Headphone.  Keep the unused Earpiece off. */
 	ret = snd_soc_dapm_disable_pin(dapm, "Earpiece");
 	if (ret)
 		return ret;
-	ret = snd_soc_dapm_disable_pin(dapm, "Headphone");
-	if (ret)
-		return ret;
-
-	if (!device_property_present(card->dev, "hp-det-gpios"))
-		return 0;
-
-	priv->headphone_pin.pin = "Headphone";
-	priv->headphone_pin.mask = SND_JACK_HEADPHONE;
-	ret = snd_soc_card_jack_new_pins(card, "Headphone Jack",
-					 SND_JACK_HEADPHONE,
-					 &priv->headphone_jack,
-					 &priv->headphone_pin, 1);
-	if (ret)
-		return ret;
-
-	priv->headphone_gpio.name = "hp-det";
-	priv->headphone_gpio.report = SND_JACK_HEADPHONE;
-	priv->headphone_gpio.debounce_time = 150;
-
-	return snd_soc_jack_add_gpiods(card->dev, &priv->headphone_jack, 1,
-				       &priv->headphone_gpio);
-}
-
-static void apq8064_tabla_link_exit(struct snd_soc_pcm_runtime *rtd)
-{
-	struct apq8064_tabla *priv = snd_soc_card_get_drvdata(rtd->card);
-
-	/* Stop GPIO work before the card and its DAPM widgets are removed. */
-	if (priv->headphone_gpio.jack)
-		snd_soc_jack_free_gpios(&priv->headphone_jack, 1,
-					&priv->headphone_gpio);
+	return snd_soc_dapm_disable_pin(dapm, "Headphone");
 }
 
 static void apq8064_tabla_put_codec_node(void *data)
@@ -139,6 +177,10 @@ static int apq8064_tabla_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, PTR_ERR(priv->spk_en),
 				     "failed to get speaker enable GPIO\n");
 
+	/* Second (bottom) amp, present on dual-speaker boards. */
+	priv->spk_en2 = devm_gpiod_get_optional(dev, "speaker-bottom-en",
+						 GPIOD_OUT_LOW);
+
 	priv->codec.of_node = of_parse_phandle(dev->of_node, "codec", 0);
 	if (!priv->codec.of_node)
 		return -EINVAL;
@@ -154,7 +196,6 @@ static int apq8064_tabla_probe(struct platform_device *pdev)
 	priv->link.name = "Tabla";
 	priv->link.stream_name = "Tabla";
 	priv->link.init = apq8064_tabla_link_init;
-	priv->link.exit = apq8064_tabla_link_exit;
 	priv->link.cpus = &priv->cpu;
 	priv->link.num_cpus = 1;
 	priv->link.codecs = &priv->codec;
