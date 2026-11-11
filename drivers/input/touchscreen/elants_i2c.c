@@ -1516,6 +1516,13 @@ static int elants_i2c_probe(struct i2c_client *client)
 	}
 
 	/*
+	 * The eKTH3500 keeps scanning for touch in its low-power idle
+	 * mode, so the INT line (wake-capable via the TLMM summary
+	 * interrupt) can wake the system from sleep on touch.
+	 */
+	device_init_wakeup(&client->dev, 1);
+
+	/*
 	 * Platform code (ACPI, DTS) should normally set up interrupt
 	 * for us, but in case it did not let's fall back to using falling
 	 * edge to be compatible with older Chromebooks.
@@ -1555,8 +1562,10 @@ static int elants_i2c_suspend(struct device *dev)
 	if (device_may_wakeup(dev)) {
 		/*
 		 * The device will automatically enter idle mode
-		 * that has reduced power consumption.
+		 * that has reduced power consumption.  Arm the INT line
+		 * so a touch wakes the system.
 		 */
+		enable_irq_wake(client->irq);
 		return 0;
 	} else if (ts->keep_power_in_suspend) {
 		for (retry_cnt = 0; retry_cnt < MAX_RETRIES; retry_cnt++) {
@@ -1586,6 +1595,7 @@ static int elants_i2c_resume(struct device *dev)
 	int error;
 
 	if (device_may_wakeup(dev)) {
+		disable_irq_wake(client->irq);
 		elants_i2c_sw_reset(client);
 	} else if (ts->keep_power_in_suspend) {
 		for (retry_cnt = 0; retry_cnt < MAX_RETRIES; retry_cnt++) {
