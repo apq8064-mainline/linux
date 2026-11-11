@@ -578,14 +578,29 @@ static u64 a3xx_gpu_busy(struct msm_gpu *gpu, unsigned long *out_sample_rate)
 
 static int a3xx_vbif_halt(struct msm_gpu *gpu)
 {
+	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
+	u32 mask = A3XX_VBIF_XIN_HALT_CTRL0_MASK;
 	u32 ack;
 	int ret;
 
-	gpu_write(gpu, REG_A3XX_VBIF_XIN_HALT_CTRL0,
-		  A3XX_VBIF_XIN_HALT_CTRL0_MASK);
+	/*
+	 * The A320 does not implement the VBIF XIN halt registers: on
+	 * flo (APQ8064) CTRL0/CTRL1 read zero and writes are dropped,
+	 * so the poll below can never complete and the suspend fails
+	 * with -EBUSY after the 1s timeout.  a3xx_idle() has already
+	 * verified that the ringbuffer is drained and the GPU reports
+	 * not busy, so the drain is skipped for A320.
+	 */
+	if (adreno_is_a320(adreno_gpu))
+		return 0;
+
+	/* A306(A) only have three VBIF XIN ports. */
+	if (adreno_is_a306(adreno_gpu) || adreno_is_a306a(adreno_gpu))
+		mask = GENMASK(2, 0);
+
+	gpu_write(gpu, REG_A3XX_VBIF_XIN_HALT_CTRL0, mask);
 	ret = spin_until(((ack = gpu_read(gpu, REG_A3XX_VBIF_XIN_HALT_CTRL1)) &
-			  A3XX_VBIF_XIN_HALT_CTRL0_MASK) ==
-			 A3XX_VBIF_XIN_HALT_CTRL0_MASK);
+			  mask) == mask);
 	gpu_write(gpu, REG_A3XX_VBIF_XIN_HALT_CTRL0, 0);
 
 	if (ret)

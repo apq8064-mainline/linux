@@ -381,7 +381,18 @@ static int adreno_system_suspend(struct device *dev)
 		goto out;
 	}
 
-	ret = pm_runtime_force_suspend(dev);
+	/*
+	 * The A320 (APQ8064) must stay clocked through system sleep:
+	 * its SMMU uses the GPU's AXI clock as the transaction clock,
+	 * and gating that clock loses the SMMU context state (no SRAM
+	 * retention), so the GPU wedges on resume with every
+	 * translation faulting.  Runtime PM is likewise forbidden on
+	 * A320 (see adreno_gpu_init()); keep the GPU running here too.
+	 */
+	if (adreno_is_a320(to_adreno_gpu(gpu)))
+		ret = 0;
+	else
+		ret = pm_runtime_force_suspend(dev);
 out:
 	if (ret)
 		resume_scheduler(gpu);
@@ -397,6 +408,11 @@ static int adreno_system_resume(struct device *dev)
 		return 0;
 
 	resume_scheduler(gpu);
+
+	/* The A320 was not suspended (see adreno_system_suspend()). */
+	if (adreno_is_a320(to_adreno_gpu(gpu)))
+		return 0;
+
 	return pm_runtime_force_resume(dev);
 }
 
