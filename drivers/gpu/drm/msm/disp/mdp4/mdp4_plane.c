@@ -109,10 +109,40 @@ static void mdp4_plane_cleanup_fb(struct drm_plane *plane,
 }
 
 
+static int mdp4_plane_check_scaling(struct drm_plane *plane,
+		uint32_t src_w, uint32_t src_h,
+		unsigned int crtc_w, unsigned int crtc_h)
+{
+	struct mdp4_plane *mdp4_plane = to_mdp4_plane(plane);
+
+	/* Match the integer source dimensions programmed into the pipe. */
+	src_w >>= 16;
+	src_h >>= 16;
+
+	if (!src_w || !src_h || !crtc_w || !crtc_h ||
+	    src_w > (u64)crtc_w * DOWN_SCALE_MAX ||
+	    src_h > (u64)crtc_h * DOWN_SCALE_MAX ||
+	    crtc_w > (u64)src_w * UP_SCALE_MAX ||
+	    crtc_h > (u64)src_h * UP_SCALE_MAX) {
+		drm_dbg_kms(plane->dev, "%s: invalid scaling %ux%u -> %ux%u\n",
+			    mdp4_plane->name, src_w, src_h, crtc_w, crtc_h);
+		return -ERANGE;
+	}
+
+	return 0;
+}
+
 static int mdp4_plane_atomic_check(struct drm_plane *plane,
 		struct drm_atomic_commit *state)
 {
-	return 0;
+	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
+									   plane);
+
+	if (!new_state->crtc || !new_state->fb)
+		return 0;
+
+	return mdp4_plane_check_scaling(plane, new_state->src_w, new_state->src_h,
+				      new_state->crtc_w, new_state->crtc_h);
 }
 
 static void mdp4_plane_atomic_update(struct drm_plane *plane,
@@ -200,7 +230,6 @@ static int mdp4_plane_mode_set(struct drm_plane *plane,
 		uint32_t src_x, uint32_t src_y,
 		uint32_t src_w, uint32_t src_h)
 {
-	struct drm_device *dev = plane->dev;
 	struct mdp4_plane *mdp4_plane = to_mdp4_plane(plane);
 	struct mdp4_kms *mdp4_kms = get_kms(plane);
 	enum mdp4_pipe pipe = mdp4_plane->pipe;
@@ -209,11 +238,16 @@ static int mdp4_plane_mode_set(struct drm_plane *plane,
 	uint32_t phasex_step = MDP4_VG_PHASE_STEP_DEFAULT;
 	uint32_t phasey_step = MDP4_VG_PHASE_STEP_DEFAULT;
 	enum mdp4_frame_format frame_type;
+	int ret;
 
 	if (!(crtc && fb)) {
 		DBG("%s: disabled!", mdp4_plane->name);
 		return 0;
 	}
+
+	ret = mdp4_plane_check_scaling(plane, src_w, src_h, crtc_w, crtc_h);
+	if (ret)
+		return ret;
 
 	frame_type = mdp4_get_frame_format(fb);
 
@@ -228,26 +262,6 @@ static int mdp4_plane_mode_set(struct drm_plane *plane,
 			crtc->base.id, crtc_x, crtc_y, crtc_w, crtc_h);
 
 	format = msm_framebuffer_format(fb);
-
-	if (src_w > (crtc_w * DOWN_SCALE_MAX)) {
-		DRM_DEV_ERROR(dev->dev, "Width down scaling exceeds limits!\n");
-		return -ERANGE;
-	}
-
-	if (src_h > (crtc_h * DOWN_SCALE_MAX)) {
-		DRM_DEV_ERROR(dev->dev, "Height down scaling exceeds limits!\n");
-		return -ERANGE;
-	}
-
-	if (crtc_w > (src_w * UP_SCALE_MAX)) {
-		DRM_DEV_ERROR(dev->dev, "Width up scaling exceeds limits!\n");
-		return -ERANGE;
-	}
-
-	if (crtc_h > (src_h * UP_SCALE_MAX)) {
-		DRM_DEV_ERROR(dev->dev, "Height up scaling exceeds limits!\n");
-		return -ERANGE;
-	}
 
 	if (src_w != crtc_w) {
 		uint32_t sel_unit = SCALE_FIR;
