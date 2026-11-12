@@ -248,19 +248,13 @@ static int jdi_panel_get_modes(struct drm_panel *panel,
 	return 1;
 }
 
-static int dsi_dcs_bl_get_brightness(struct backlight_device *bl)
-{
-	struct mipi_dsi_device *dsi = bl_get_data(bl);
-	int ret;
-	u16 brightness = bl->props.brightness;
-
-	ret = mipi_dsi_dcs_get_display_brightness(dsi, &brightness);
-	if (ret < 0)
-		return ret;
-
-	return brightness & 0xff;
-}
-
+/*
+ * This panel does not implement the DCS GET_DISPLAY_BRIGHTNESS (0x52)
+ * command; reading it times out and permanently wedges the DSI command
+ * path until a full re-init. Report the software-tracked brightness
+ * instead (the backlight core falls back to props.brightness when no
+ * get_brightness op is provided).
+ */
 static int dsi_dcs_bl_update_status(struct backlight_device *bl)
 {
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
@@ -275,7 +269,6 @@ static int dsi_dcs_bl_update_status(struct backlight_device *bl)
 
 static const struct backlight_ops dsi_bl_ops = {
 	.update_status = dsi_dcs_bl_update_status,
-	.get_brightness = dsi_dcs_bl_get_brightness,
 };
 
 static struct backlight_device *
