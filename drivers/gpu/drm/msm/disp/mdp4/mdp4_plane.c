@@ -135,14 +135,32 @@ static int mdp4_plane_check_scaling(struct drm_plane *plane,
 static int mdp4_plane_atomic_check(struct drm_plane *plane,
 		struct drm_atomic_commit *state)
 {
+	struct mdp4_plane *mdp4_plane = to_mdp4_plane(plane);
 	struct drm_plane_state *new_state = drm_atomic_get_new_plane_state(state,
 									   plane);
+	const struct msm_format *format;
+	int ret;
 
 	if (!new_state->crtc || !new_state->fb)
 		return 0;
 
-	return mdp4_plane_check_scaling(plane, new_state->src_w, new_state->src_h,
-				      new_state->crtc_w, new_state->crtc_h);
+	ret = mdp4_plane_check_scaling(plane, new_state->src_w, new_state->src_h,
+				     new_state->crtc_w, new_state->crtc_h);
+	if (ret)
+		return ret;
+
+	/* The VG FIR/MN scalers do not preserve per-pixel alpha. */
+	format = msm_framebuffer_format(new_state->fb);
+	if (pipe_supports_yuv(mdp4_pipe_caps(mdp4_plane->pipe)) &&
+	    format->alpha_enable &&
+	    ((new_state->src_w >> 16) != new_state->crtc_w ||
+	     (new_state->src_h >> 16) != new_state->crtc_h)) {
+		drm_dbg_kms(plane->dev, "%s: cannot scale a buffer with alpha\n",
+			    mdp4_plane->name);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void mdp4_plane_atomic_update(struct drm_plane *plane,
