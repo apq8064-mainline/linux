@@ -274,9 +274,9 @@ static int mdp4_plane_mode_set(struct drm_plane *plane,
 				sel_unit = SCALE_MN_PHASE;
 
 			op_mode |= MDP4_PIPE_OP_MODE_SCALEX_UNIT_SEL(sel_unit);
-			phasex_step = mult_frac(MDP4_VG_PHASE_STEP_DEFAULT,
-					src_w, crtc_w);
 		}
+		phasex_step = mult_frac(MDP4_VG_PHASE_STEP_DEFAULT,
+				src_w, crtc_w);
 	}
 
 	if (src_h != crtc_h) {
@@ -291,9 +291,9 @@ static int mdp4_plane_mode_set(struct drm_plane *plane,
 				sel_unit = SCALE_MN_PHASE;
 
 			op_mode |= MDP4_PIPE_OP_MODE_SCALEY_UNIT_SEL(sel_unit);
-			phasey_step = mult_frac(MDP4_VG_PHASE_STEP_DEFAULT,
-					src_h, crtc_h);
 		}
+		phasey_step = mult_frac(MDP4_VG_PHASE_STEP_DEFAULT,
+				src_h, crtc_h);
 	}
 
 	mdp4_write(mdp4_kms, REG_MDP4_PIPE_SRC_SIZE(pipe),
