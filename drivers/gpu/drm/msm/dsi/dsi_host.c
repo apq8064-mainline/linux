@@ -1501,10 +1501,20 @@ static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
 		ret = wait_for_completion_timeout(&msm_host->dma_comp,
 					msecs_to_jiffies(200));
 		DBG("ret=%d", ret);
-		if (ret == 0)
+		if (ret == 0) {
+			/*
+			 * The transfer never completed: the controller is left
+			 * with a pending transaction (e.g. a DCS read waiting
+			 * for a panel response that never comes). Without
+			 * recovery, every subsequent command stalls in the same
+			 * wedged state until a full DSI re-init. Clear it with a
+			 * software reset, as done for other engine errors.
+			 */
+			dsi_sw_reset(msm_host);
 			ret = -ETIMEDOUT;
-		else
+		} else {
 			ret = len;
+		}
 	} else {
 		ret = len;
 	}
