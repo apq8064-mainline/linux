@@ -153,6 +153,48 @@
 
 };
 
+/*
+ * GSBI2 I2C bus: motion/sensor hub with MPU6500 (accel/gyro, 0x68),
+ * AK8963 (magnetometer, 0x0c) and AL3320A (ALS, 0x1c). The stock kernel
+ * drives these from the DSPS coprocessor; here the AP polls them over
+ * I2C. pm8921_lvs4 (1.8V) is the bus pull-up rail and is kept on below.
+ */
+&gsbi2 {
+	qcom,mode = <GSBI_PROT_I2C>;
+	status = "okay";
+};
+
+&gsbi2_i2c {
+	status = "okay";
+	clock-frequency = <200000>;
+
+	mpu6500@68 {
+		compatible = "invensense,mpu6500";
+		reg = <0x68>;
+
+		/*
+		 * The sensor is mounted rotated 180 degrees about the Y axis
+		 * relative to the panel's natural landscape orientation. Without
+		 * this, the natural (upright) landscape reads as InverseLandscape
+		 * and the display renders upside-down. Flipping X (and Z) corrects
+		 * the 180-degree landscape error while leaving Y (portrait) intact.
+		 */
+		mount-matrix = "-1", "0", "0",
+						"0",  "1", "0",
+						"0",  "0", "-1";
+	};
+
+	ak8963@c {
+		compatible = "asahi-kasei,ak8963";
+		reg = <0xc>;
+	};
+
+	al3320a@1c {
+		compatible = "dynaimage,al3320a";
+		reg = <0x1c>;
+	};
+};
+
 &gsbi3 {
 	qcom,mode = <GSBI_PROT_I2C>;
 	status = "okay";
@@ -374,7 +416,9 @@
 		pm8921_lvs2: lvs2 {
 		};
 
+		/* I2C pull-up rail for the GSBI2 sensor bus; must stay on. */
 		pm8921_lvs4: lvs4 {
+			regulator-always-on;
 			bias-pull-down;
 		};
 
