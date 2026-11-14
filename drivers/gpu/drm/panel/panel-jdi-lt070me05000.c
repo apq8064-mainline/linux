@@ -211,7 +211,21 @@ static int jdi_panel_enable(struct drm_panel *panel)
 }
 
 static const struct drm_display_mode default_mode = {
-		.clock = 155493,
+	/*
+	 * The mode's nominal clock (155493 kHz) cannot be produced by the
+	 * DSI PLL: for this lane config the VCO settles at 932 MHz, giving
+	 * an actual pixel clock of 932/2/3 = 155333333 Hz (and byte clock
+	 * 932/8 = 116.5 MBaud). Programming the nominal rate leaves a
+	 * ~160 kHz (0.1%) mismatch between the frame period derived from
+	 * the mode and the hardware clock; MDP4 and the DSI video engine
+	 * drift apart until the primary interface underflows, showing up as
+	 * periodic 'vblank time out' bursts and visible flicker.
+	 *
+	 * Program the actually achievable rate (59.94 Hz instead of 60 Hz,
+	 * invisible to the panel) so all timing derived from the mode
+	 * matches the hardware.
+	 */
+		.clock = 155333,
 		.hdisplay = 1200,
 		.hsync_start = 1200 + 48,
 		.hsync_end = 1200 + 48 + 32,
