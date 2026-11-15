@@ -1196,17 +1196,26 @@ static int tabla_slim_init(struct slim_device *sdev,
 	if (ret)
 		return ret;
 
-	tabla->regmap = devm_regmap_init(dev, NULL, sdev,
-					 &tabla_regmap_config);
-	if (IS_ERR(tabla->regmap))
-		return dev_err_probe(dev, PTR_ERR(tabla->regmap),
-				     "regmap init failed\n");
+	/*
+	 * init can run twice in one probe (a stale "already present" status
+	 * leads to a failed init and a retry after the reset cycle); reuse
+	 * the regmaps instead of re-creating them.
+	 */
+	if (!tabla->regmap) {
+		tabla->regmap = devm_regmap_init(dev, NULL, sdev,
+						 &tabla_regmap_config);
+		if (IS_ERR(tabla->regmap))
+			return dev_err_probe(dev, PTR_ERR(tabla->regmap),
+					     "regmap init failed\n");
+	}
 
-	tabla->ifc_regmap = devm_regmap_init(dev, NULL, tabla->ifc_sdev,
-					     &tabla_regmap_config);
-	if (IS_ERR(tabla->ifc_regmap))
-		return dev_err_probe(dev, PTR_ERR(tabla->ifc_regmap),
-				     "interface device regmap init failed\n");
+	if (!tabla->ifc_regmap) {
+		tabla->ifc_regmap = devm_regmap_init(dev, NULL, tabla->ifc_sdev,
+						 &tabla_regmap_config);
+		if (IS_ERR(tabla->ifc_regmap))
+			return dev_err_probe(dev, PTR_ERR(tabla->ifc_regmap),
+					     "interface device regmap init failed\n");
+	}
 
 	/* Mask port interrupts until a handler is available to clear them. */
 	for (i = 0; i < 3; i++) {
@@ -1275,6 +1284,37 @@ static void tabla_slim_disable_hw(void *data)
 	}
 }
 
+/*
+ * Errors that mean "the codec did not answer" (as opposed to a real
+ * software fault).  Those are transient: the reset-cycle recovery
+ * below, or a later deferred probe, can fix them.
+ */
+static bool tabla_slim_codec_unreachable(int ret)
+{
+	return ret == -ETIMEDOUT || ret == -ENOTCONN || ret == -EIO ||
+	       ret == -EACCES || ret == -EBUSY || ret == -EINVAL;
+}
+
+/*
+ * Real reset of the codec: assert RESET_B for a while, then release.
+ * The codec needs a reset pulse of roughly a quarter of a second or
+ * more to leave its stuck state (shorter pulses were observed not to
+ * reset the SLIM domain at all); 1 s leaves a comfortable margin.
+ * A freshly reset chip takes a few seconds to re-enumerate its SLIM
+ * functions and accept register writes again; the caller retries the
+ * bring-up until it answers.
+ */
+static int tabla_slim_reset_cycle(struct tabla *tabla)
+{
+	if (!tabla->reset)
+		return -ENODEV;
+
+	gpiod_set_value_cansleep(tabla->reset, 1); /* assert (low) */
+	msleep(1000);
+	gpiod_set_value_cansleep(tabla->reset, 0); /* deassert (high) */
+	return 0;
+}
+
 static int tabla_slim_probe(struct slim_device *sdev)
 {
 	struct device *dev = &sdev->dev;
@@ -1309,6 +1349,17 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to get supplies\n");
 
+	/*
+	 * RESET_B is active low.  Drive it to the deassert level from
+	 * the start: that makes the boot-time pin state deterministic
+	 * (a floating low would hold the codec in reset) and lets the
+	 * codec enumerate on its own before the first register access.
+	 */
+	tabla->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(tabla->reset))
+		return dev_err_probe(dev, PTR_ERR(tabla->reset),
+				     "failed to get reset gpio\n");
+
 	ret = regulator_bulk_enable(ARRAY_SIZE(tabla->supplies),
 				    tabla->supplies);
 	if (ret)
@@ -1336,67 +1387,103 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		goto err_disable;
 
 	/*
-	 * On flo the codec self-starts: the 1.8V S4 rail is always-on and
-	 * the reset line is deasserted by default, so the WCD9310 reports
-	 * present on the SLIM bus before this driver probes. Driving the
-	 * reset here would kill the already-working codec and it does not
-	 * reliably re-enumerate afterwards. So wait for it to be (or become)
-	 * present and bind without touching the reset line.
+	 * The codec may already be up: S4 is always-on and, with RESET_B
+	 * driven to the deassert level, the WCD9310 reports present on
+	 * the SLIM bus on its own.  Wait a short while with the bus clock
+	 * active and see if it shows up.
 	 */
 	ret = pm_runtime_resume_and_get(sdev->dev.parent);
 	if (ret < 0) {
+		/*
+		 * -EACCES means the controller's runtime PM is not ready
+		 * yet (e.g. its own probe is still in progress); retry
+		 * later.
+		 */
 		dev_err_probe(dev, ret, "failed to resume slimbus controller\n");
+		ret = (ret == -EACCES || ret == -EBUSY) ? -EPROBE_DEFER : ret;
 		goto err_disable;
 	}
 	for (i = 0; i < 50; i++) {
 		if (sdev->status == SLIM_DEVICE_STATUS_UP)
 			break;
 		usleep_range(10000, 11000);
-	}
-	pm_runtime_put_sync(sdev->dev.parent);
-
-	if (sdev->status == SLIM_DEVICE_STATUS_UP) {
-		dev_info(dev, "codec already present, binding without reset\n");
-		ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
-		if (ret)
-			goto err_disable;
-		return 0;
 	}
 
 	/*
-	 * The codec did not self-start. Deassert the reset line (active-low,
-	 * so logical 0 releases it) and give it a chance to come up.
+	 * If the codec reports present, try to bind it right away.  That
+	 * can still fail if the status is stale: the slim core keeps a
+	 * device UP with its logical address after a driver unbind, so a
+	 * rebind after the codec was reset sees status UP while the codec
+	 * is actually dead and transactions to it time out.  In that case
+	 * fall through and cycle the reset line below.
 	 */
-	dev_info(dev, "codec not present, deasserting reset\n");
-	tabla->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(tabla->reset)) {
-		ret = dev_err_probe(dev, PTR_ERR(tabla->reset),
-				    "failed to get reset gpio\n");
-		goto err_disable;
+	if (sdev->status == SLIM_DEVICE_STATUS_UP) {
+		dev_info(dev, "codec already present, binding without reset\n");
+		ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
+		if (!ret) {
+			pm_runtime_put_sync(sdev->dev.parent);
+			return 0;
+		}
+		if (!tabla_slim_codec_unreachable(ret)) {
+			dev_err(dev, "codec init failed (%d)\n", ret);
+			pm_runtime_put_sync(sdev->dev.parent);
+			goto err_disable;
+		}
+		dev_warn(dev, "codec present but unresponsive (%d), cycling reset\n",
+			 ret);
+	} else {
+		dev_info(dev, "codec not present, cycling reset\n");
 	}
-	msleep(20);
 
-	ret = pm_runtime_resume_and_get(sdev->dev.parent);
-	if (ret < 0) {
-		dev_err_probe(dev, ret, "failed to resume slimbus controller\n");
-		goto err_disable;
+	/*
+	 * Either the codec did not report present or it does not answer
+	 * its registers: in both cases the cure is a real reset cycle
+	 * on RESET_B.  A freshly reset chip takes a few seconds to
+	 * re-enumerate its SLIM functions and accept register writes
+	 * again, so the bring-up below is retried until the codec
+	 * answers.  MCLK (and the controller) stays active until probe
+	 * ends.
+	 */
+	ret = tabla_slim_reset_cycle(tabla);
+	if (ret) {
+		/*
+		 * No usable reset line: wait for the codec to
+		 * stabilise on its own.
+		 */
+		bool stale_up = sdev->status == SLIM_DEVICE_STATUS_UP;
+		unsigned long settle = jiffies + msecs_to_jiffies(5000);
+		unsigned long deadline = jiffies + msecs_to_jiffies(10000);
+
+		dev_info(dev, "no reset line, waiting for codec to stabilise\n");
+		do {
+			if (sdev->status == SLIM_DEVICE_STATUS_UP &&
+			    (!stale_up || time_after(jiffies, settle)))
+				break;
+			usleep_range(100000, 110000);
+		} while (time_before(jiffies, deadline));
 	}
-	for (i = 0; i < 50; i++) {
-		if (sdev->status == SLIM_DEVICE_STATUS_UP)
-			break;
-		usleep_range(10000, 11000);
+
+	{
+		unsigned long deadline = jiffies + msecs_to_jiffies(15000);
+
+		do {
+			ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
+			if (!ret || !tabla_slim_codec_unreachable(ret))
+				break;
+			usleep_range(200000, 210000);
+		} while (time_before(jiffies, deadline));
 	}
 	pm_runtime_put_sync(sdev->dev.parent);
 
-	if (sdev->status != SLIM_DEVICE_STATUS_UP) {
-		dev_err(dev, "codec did not report present after 500ms\n");
-		ret = -EPROBE_DEFER;
+	if (ret) {
+		dev_err(dev, "codec unresponsive after reset cycle (%d)\n", ret);
+		/*
+		 * If the codec simply does not answer, retry later; a
+		 * different failure is permanent.
+		 */
+		ret = tabla_slim_codec_unreachable(ret) ? -EPROBE_DEFER : ret;
 		goto err_disable;
 	}
-
-	ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
-	if (ret)
-		goto err_disable;
 	return 0;
 
 err_disable:

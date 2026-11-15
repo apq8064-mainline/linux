@@ -470,6 +470,27 @@ err:
 }
 
 /**
+ * slim_device_reassign_laddr() - Re-send the logical address assignment.
+ *
+ * @sbdev: Device with a valid logical address.
+ *
+ * Sends the ASSIGN_LOGICAL_ADDRESS message for @sbdev to the device's
+ * enumeration address.  A slave that is still listening on its
+ * enumeration address (present, or stuck between present and active)
+ * is (re-)activated by this; a slave that is already active does not
+ * listen on its enumeration address and ignores the message.
+ */
+static int slim_device_reassign_laddr(struct slim_device *sbdev)
+{
+	struct slim_controller *ctrl = sbdev->ctrl;
+
+	if (!ctrl->set_laddr)
+		return 0;
+
+	return ctrl->set_laddr(ctrl, &sbdev->e_addr, sbdev->laddr);
+}
+
+/**
  * slim_device_report_present() - Report enumerated device.
  *
  * @ctrl: Controller with which device is enumerated.
@@ -502,6 +523,24 @@ int slim_device_report_present(struct slim_controller *ctrl,
 	}
 
 	if (sbdev->is_laddr_valid) {
+		/*
+		 * The device already has a logical address but is
+		 * reporting present again: it lost its address (e.g.
+		 * after a hardware reset that the manager never saw a
+		 * REPORT_ABSENT for) and needs to be re-activated.
+		 */
+		ret = slim_device_reassign_laddr(sbdev);
+		if (ret) {
+			dev_err(ctrl->dev, "re-assign laddr:0x%x failed:%d\n",
+				sbdev->laddr, ret);
+			put_device(&sbdev->dev);
+			goto out_put_rpm;
+		}
+		dev_info(ctrl->dev, "re-assigning laddr:0x%x to %x,%x,%x,%x\n",
+			 sbdev->laddr, sbdev->e_addr.manf_id,
+			 sbdev->e_addr.prod_code,
+			 sbdev->e_addr.dev_index,
+			 sbdev->e_addr.instance);
 		*laddr = sbdev->laddr;
 		ret = 0;
 	} else {

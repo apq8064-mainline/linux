@@ -506,6 +506,12 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&cdc_mclk_state>;
 
+		/*
+		 * WCD9310 RESET_B, on PM8921 physical GPIO34.  The
+		 * pinctrl-ssbi-gpio of_xlate() converts the physical
+		 * (1-based) PMIC pin number to the 0-based gpio chip
+		 * index, so the DTS offset is the physical number.
+		 */
 		reset-gpios = <&pm8921_gpio 34 GPIO_ACTIVE_LOW>;
 		slim-ifc-dev = <&tabla_ifd>;
 		#sound-dai-cells = <0>;
