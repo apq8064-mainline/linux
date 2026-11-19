@@ -90,7 +90,8 @@ static int apq8064_tabla_link_init(struct snd_soc_pcm_runtime *rtd)
 	if (ret)
 		return ret;
 
-	if (priv->spk_en2) {
+	/* TEMP A/B: always power LINEOUT1/3 like the pre-a1a0695 kernel did. */
+	if (true || priv->spk_en2) {
 		ret = snd_soc_dapm_add_routes(dapm, apq8064_tabla_bottom_routes,
 					    ARRAY_SIZE(apq8064_tabla_bottom_routes));
 		if (ret)
