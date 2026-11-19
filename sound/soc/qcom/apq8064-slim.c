@@ -104,7 +104,6 @@ static void apq8064_slim_mono_fill(struct apq8064_slim_runtime *sr,
 	struct snd_pcm_runtime *runtime = sr->substream->runtime;
 	const int16_t *src = (const int16_t *)(runtime->dma_area + offset);
 	unsigned int frames = sr->ch_bytes / 2;
-	unsigned int i;
 
 	memcpy(sr->l_virt[buf], src, frames * sizeof(int16_t));
 	memcpy(sr->r_virt[buf], src, frames * sizeof(int16_t));
