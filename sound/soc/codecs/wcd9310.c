@@ -857,7 +857,11 @@ static int tabla_dai_hw_params(struct snd_pcm_substream *substream,
 				 0xe0, 0x60);
 	if (ret)
 		return ret;
-	return regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX5_B5_CTL,
+	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX5_B5_CTL,
+				 0xe0, 0x60);
+	if (ret)
+		return ret;
+	return regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX6_B5_CTL,
 				  0xe0, 0x60);
 }
 
