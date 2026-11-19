@@ -1199,8 +1199,17 @@ static int tabla_slim_init(struct slim_device *sdev,
 		} while (--retry);
 	}
 	pm_runtime_put_sync(sdev->dev.parent);
-	if (ret)
-		return ret;
+	if (ret) {
+		/*
+		 * slim_get_logical_addr() reports every assignment failure
+		 * as -EINVAL. The only reason it fails here is that the
+		 * interface device did not answer on the bus, which is the
+		 * "codec unreachable" case, not an invalid argument.
+		 */
+		dev_dbg(dev, "interface device has no logical address (%d)\n",
+			ret);
+		return -ETIMEDOUT;
+	}
 
 	/*
 	 * init can run twice in one probe (a stale "already present" status
@@ -1297,9 +1306,8 @@ static void tabla_slim_disable_hw(void *data)
  */
 static bool tabla_slim_codec_unreachable(int ret)
 {
-	/* slim_device_alloc_laddr() maps assignment failures to -EINVAL. */
 	return ret == -ETIMEDOUT || ret == -ENOTCONN || ret == -EIO ||
-	       ret == -EACCES || ret == -EBUSY || ret == -EINVAL;
+	       ret == -EACCES || ret == -EBUSY;
 }
 
 /* Called under init_lock so enumeration cannot initialise a half-reset codec. */
