@@ -1190,7 +1190,7 @@ static int tabla_slim_init(struct slim_device *sdev,
 	 * leads to a failed init and a retry after the reset cycle); reuse
 	 * the regmaps instead of re-creating them.
 	 */
-	if (!tabla->regmap) {
+	if (IS_ERR_OR_NULL(tabla->regmap)) {
 		tabla->regmap = devm_regmap_init(dev, NULL, sdev,
 						 &tabla_regmap_config);
 		if (IS_ERR(tabla->regmap))
@@ -1198,7 +1198,7 @@ static int tabla_slim_init(struct slim_device *sdev,
 					     "regmap init failed\n");
 	}
 
-	if (!tabla->ifc_regmap) {
+	if (IS_ERR_OR_NULL(tabla->ifc_regmap)) {
 		tabla->ifc_regmap = devm_regmap_init(dev, NULL, tabla->ifc_sdev,
 						 &tabla_regmap_config);
 		if (IS_ERR(tabla->ifc_regmap))
@@ -1242,7 +1242,7 @@ static int tabla_slim_status(struct slim_device *sdev,
 	struct tabla *tabla = slim_get_devicedata(sdev);
 	int ret;
 
-	if (!tabla || !tabla->mclk_enabled)
+	if (status != SLIM_DEVICE_STATUS_UP || !tabla || !tabla->mclk_enabled)
 		return 0;
 	mutex_lock(&tabla->init_lock);
 	ret = tabla_slim_init(sdev, status);
@@ -1281,26 +1281,33 @@ static void tabla_slim_disable_hw(void *data)
 static bool tabla_slim_codec_unreachable(int ret)
 {
 	return ret == -ETIMEDOUT || ret == -ENOTCONN || ret == -EIO ||
-	       ret == -EACCES || ret == -EBUSY || ret == -EINVAL;
+	       ret == -EACCES || ret == -EBUSY;
 }
 
-/*
- * Real reset of the codec: assert RESET_B for a while, then release.
- * The codec needs a reset pulse of roughly a quarter of a second or
- * more to leave its stuck state (shorter pulses were observed not to
- * reset the SLIM domain at all); 1 s leaves a comfortable margin.
- * A freshly reset chip takes a few seconds to re-enumerate its SLIM
- * functions and accept register writes again; the caller retries the
- * bring-up until it answers.
- */
-static int tabla_slim_reset_cycle(struct tabla *tabla)
+/* Called under init_lock so enumeration cannot initialise a half-reset codec. */
+static int tabla_slim_reset_cycle(struct slim_device *sdev,
+				  struct tabla *tabla, unsigned int duration_ms)
 {
+	int ret;
+
 	if (!tabla->reset)
 		return -ENODEV;
 
-	gpiod_set_value_cansleep(tabla->reset, 1); /* assert (low) */
-	msleep(1000);
-	gpiod_set_value_cansleep(tabla->reset, 0); /* deassert (high) */
+	ret = gpiod_set_value_cansleep(tabla->reset, 1);
+	if (ret)
+		return ret;
+	msleep(duration_ms);
+
+	/* Both functions lose their logical addresses during hardware reset. */
+	if (sdev->is_laddr_valid)
+		slim_report_absent(sdev);
+	if (tabla->ifc_sdev->is_laddr_valid)
+		slim_report_absent(tabla->ifc_sdev);
+
+	ret = gpiod_set_value_cansleep(tabla->reset, 0);
+	if (ret)
+		return ret;
+	msleep(20);
 	return 0;
 }
 
@@ -1357,9 +1364,11 @@ static int tabla_slim_probe(struct slim_device *sdev)
 
 	/* MCLK is the audio master clock; enable it up front. */
 	tabla->mclk = devm_clk_get(dev, "mclk");
-	if (IS_ERR(tabla->mclk))
-		return dev_err_probe(dev, PTR_ERR(tabla->mclk),
+	if (IS_ERR(tabla->mclk)) {
+		ret = dev_err_probe(dev, PTR_ERR(tabla->mclk),
 				     "failed to get mclk\n");
+		goto err_disable;
+	}
 	ret = clk_set_rate(tabla->mclk, TABLA_MCLK_RATE);
 	if (ret) {
 		dev_err_probe(dev, ret, "failed to set mclk rate\n");
@@ -1370,17 +1379,18 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		dev_err_probe(dev, ret, "failed to enable mclk\n");
 		goto err_disable;
 	}
+	/* Both jflte and flo downstream reset for 20 ms at initial probe. */
+	mutex_lock(&tabla->init_lock);
 	tabla->mclk_enabled = true;
+	ret = tabla->reset ? tabla_slim_reset_cycle(sdev, tabla, 20) : 0;
+	mutex_unlock(&tabla->init_lock);
+	if (ret)
+		goto err_disable;
 	ret = devm_add_action_or_reset(dev, tabla_slim_disable_hw, tabla);
 	if (ret)
 		goto err_disable;
 
-	/*
-	 * The codec may already be up: S4 is always-on and, with RESET_B
-	 * driven to the deassert level, the WCD9310 reports present on
-	 * the SLIM bus on its own.  Wait a short while with the bus clock
-	 * active and see if it shows up.
-	 */
+	/* Keep the bus active while both codec functions re-enumerate. */
 	ret = pm_runtime_resume_and_get(sdev->dev.parent);
 	if (ret < 0) {
 		/*
@@ -1407,7 +1417,7 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	 * fall through and cycle the reset line below.
 	 */
 	if (sdev->status == SLIM_DEVICE_STATUS_UP) {
-		dev_info(dev, "codec already present, binding without reset\n");
+		dev_info(dev, "codec enumerated, initialising\n");
 		ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
 		if (!ret) {
 			pm_runtime_put_sync(sdev->dev.parent);
@@ -1433,7 +1443,9 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	 * answers.  MCLK (and the controller) stays active until probe
 	 * ends.
 	 */
-	ret = tabla_slim_reset_cycle(tabla);
+	mutex_lock(&tabla->init_lock);
+	ret = tabla->registered ? 0 : tabla_slim_reset_cycle(sdev, tabla, 1000);
+	mutex_unlock(&tabla->init_lock);
 	if (ret) {
 		/*
 		 * No usable reset line: wait for the codec to
@@ -1456,7 +1468,9 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		unsigned long deadline = jiffies + msecs_to_jiffies(15000);
 
 		do {
-			ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
+			ret = sdev->status == SLIM_DEVICE_STATUS_UP ?
+				tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP) :
+				-ETIMEDOUT;
 			if (!ret || !tabla_slim_codec_unreachable(ret))
 				break;
 			usleep_range(200000, 210000);
