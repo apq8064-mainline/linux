@@ -1341,6 +1341,29 @@ static int tabla_slim_reset_cycle(struct slim_device *sdev,
 	return 0;
 }
 
+/*
+ * Retry the bring-up until the codec answers.  After a reset the PGD can be
+ * reported UP again well before the interface device has re-enumerated, so a
+ * single attempt right after the reset fails and a patient retry succeeds.
+ */
+static int tabla_slim_wait_codec(struct slim_device *sdev,
+				 unsigned int timeout_ms)
+{
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	int ret;
+
+	do {
+		ret = sdev->status == SLIM_DEVICE_STATUS_UP ?
+			tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP) :
+			-ETIMEDOUT;
+		if (!ret || !tabla_slim_codec_unreachable(ret))
+			break;
+		usleep_range(200000, 210000);
+	} while (time_before(jiffies, deadline));
+
+	return ret;
+}
+
 static int tabla_slim_probe(struct slim_device *sdev)
 {
 	struct device *dev = &sdev->dev;
@@ -1448,7 +1471,7 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	 */
 	if (sdev->status == SLIM_DEVICE_STATUS_UP) {
 		dev_info(dev, "codec enumerated, initialising\n");
-		ret = tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP);
+		ret = tabla_slim_wait_codec(sdev, 5000);
 		if (!ret) {
 			pm_runtime_put_sync(sdev->dev.parent);
 			return 0;
@@ -1481,18 +1504,7 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		goto err_disable;
 	}
 
-	{
-		unsigned long deadline = jiffies + msecs_to_jiffies(15000);
-
-		do {
-			ret = sdev->status == SLIM_DEVICE_STATUS_UP ?
-				tabla_slim_status(sdev, SLIM_DEVICE_STATUS_UP) :
-				-ETIMEDOUT;
-			if (!ret || !tabla_slim_codec_unreachable(ret))
-				break;
-			usleep_range(200000, 210000);
-		} while (time_before(jiffies, deadline));
-	}
+	ret = tabla_slim_wait_codec(sdev, 15000);
 	pm_runtime_put_sync(sdev->dev.parent);
 
 	if (ret) {
