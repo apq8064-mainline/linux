@@ -723,6 +723,7 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	 * above); HPHR takes slot 1 so the two headphone channels are
 	 * independent.
 	 */
+	{ "RX2 MIX1 INP1 Mux", "RX1", "SLIM RX" },
 	{ "RX2 MIX1 INP1 Mux", "RX2", "SLIM RX" },
 	{ "RX2 MIX1", NULL, "RX2 MIX1 INP1 Mux" },
 	{ "RX2 MIX2", NULL, "RX2 MIX1" },
@@ -834,18 +835,6 @@ static int tabla_dai_hw_params(struct snd_pcm_substream *substream,
 	    (params_channels(params) != 1 && params_channels(params) != 2) ||
 	    params_format(params) != SNDRV_PCM_FORMAT_S16_LE)
 		return -EINVAL;
-	/*
-	 * Re-assert the RX2 -> HPHR routing on every stream start.  The
-	 * system-wide ALSA state restore (alsa-restore.service) replays
-	 * whatever the state file held after the last shutdown, and a
-	 * stale "RX2 MIX1 INP1 Mux" value there silently kills the right
-	 * channel because DAPM only powers the RX2 chain when the mux
-	 * register matches the route table.
-	 */
-	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_CONN_RX2_B1_CTL,
-				 0x0f, 0x06);
-	if (ret)
-		return ret;
 	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX1_B5_CTL,
 				 0xe0, 0x60);
 	if (ret)
