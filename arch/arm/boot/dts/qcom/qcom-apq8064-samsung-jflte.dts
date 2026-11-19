@@ -96,13 +96,21 @@
 				maxim,constant-microvolt = <4350000>;
 				maxim,min-system-microvolt = <3600000>;
 				/*
-				 * Input current limit for the CHGIN buck.
-				 * 500 mA is safe on any USB host port; the
-				 * downstream MUIC-aware stack starts at 900 mA
-				 * on dedicated chargers and backs off on UVLO.
+				 * Input current limit for the CHGIN buck. The
+				 * downstream table is per cable: 460 mA on USB
+				 * SDP/DCP, 1000 mA on CDP, 1700-1800 mA on wall
+				 * chargers. This driver cannot follow the cable
+				 * type, so use the value that is safe on any USB
+				 * host port. Raise it once the input limit can
+				 * follow the MUIC cable detection.
+				 *
+				 * Fast charge is 2100 mA downstream for every
+				 * cable that allows more than USB; it only caps
+				 * the battery side, the input limit decides what
+				 * is actually drawn.
 				 */
 				maxim,charge-input-current-limit-microamp = <500000>;
-				maxim,fast-charge-current-microamp = <800000>;
+				maxim,fast-charge-current-microamp = <2100000>;
 			};
 
 			regulators {
