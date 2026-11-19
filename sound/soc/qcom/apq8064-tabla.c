@@ -57,9 +57,9 @@ static const struct snd_soc_dapm_widget apq8064_tabla_widgets[] = {
 	SND_SOC_DAPM_OUT_DRV_E("Speaker Amplifier", SND_SOC_NOPM, 0, 0,
 			       NULL, 0, apq8064_tabla_spk_event,
 			       SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_OUTPUT("Speaker"),
-	SND_SOC_DAPM_OUTPUT("Earpiece"),
-	SND_SOC_DAPM_OUTPUT("Headphone"),
+	SND_SOC_DAPM_SPK("Speaker", NULL),
+	SND_SOC_DAPM_SPK("Earpiece", NULL),
+	SND_SOC_DAPM_HP("Headphone", NULL),
 };
 
 static const struct snd_soc_dapm_route apq8064_tabla_routes[] = {
@@ -195,6 +195,8 @@ static int apq8064_tabla_probe(struct platform_device *pdev)
 	card = &priv->card;
 	card->dev = dev;
 	card->owner = THIS_MODULE;
+	/* Codec pins are intermediate nodes; only board outputs are sinks. */
+	card->fully_routed = true;
 	card->dai_link = &priv->link;
 	card->num_links = 1;
 	card->controls = apq8064_tabla_controls;
