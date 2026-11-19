@@ -144,9 +144,16 @@ static void apq8064_tabla_link_exit(struct snd_soc_pcm_runtime *rtd)
 	struct apq8064_tabla *priv = snd_soc_card_get_drvdata(rtd->card);
 
 	/* Stop GPIO work before the card and its DAPM widgets are removed. */
-	if (priv->headphone_gpio.jack)
+	if (priv->headphone_gpio.jack) {
 		snd_soc_jack_free_gpios(&priv->headphone_jack, 1,
 					&priv->headphone_gpio);
+		/*
+		 * The jack core puts the descriptor but keeps the pointer, and
+		 * would reuse it unrequested (active-low flag cleared) if the
+		 * card is registered again, e.g. after a codec rebind.
+		 */
+		priv->headphone_gpio.desc = NULL;
+	}
 }
 
 static void apq8064_tabla_put_codec_node(void *data)
