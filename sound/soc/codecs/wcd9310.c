@@ -813,15 +813,20 @@ static int tabla_ifc_port_enable(struct tabla *tabla, bool enable)
 
 	/*
 	 * Each RX channel lands on its own SLIM slave port: channel 0 on
-	 * port 10 (RX1), channel 1 on port 11 (RX2). The multichannel
-	 * mask (bits 0 and 1 set for the two-channel group) and the port
-	 * enable must be programmed on every port in the group, or the
-	 * other channel is unaware of the group and stays silent.
+	 * port 10 (RX1), channel 1 on port 11 (RX2). Both ports must be
+	 * programmed, or the other channel stays silent.
+	 *
+	 * Make every port a group of its own (mask relative to the first RX
+	 * port, as downstream does for single-port playback). Grouping both
+	 * ports together makes port 10 stall unless port 11 is also being
+	 * drained by an interpolator, which silences outputs that only use
+	 * RX1, such as the rear speaker and the earpiece.
 	 */
 	for (i = 0; i < TABLA_IFC_RX_PORT_COUNT; i++) {
 		if (enable) {
 			ret = regmap_write(tabla->ifc_regmap,
-					   TABLA_IFC_RX_MCH_BASE + 4 * i, 3);
+					   TABLA_IFC_RX_MCH_BASE + 4 * i,
+					   BIT(i));
 			if (ret)
 				return ret;
 		}
