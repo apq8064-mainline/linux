@@ -536,7 +536,7 @@ int slim_device_report_present(struct slim_controller *ctrl,
 			put_device(&sbdev->dev);
 			goto out_put_rpm;
 		}
-		dev_info(ctrl->dev, "re-assigning laddr:0x%x to %x,%x,%x,%x\n",
+		dev_dbg(ctrl->dev, "re-assigned laddr:0x%x to %x,%x,%x,%x\n",
 			 sbdev->laddr, sbdev->e_addr.manf_id,
 			 sbdev->e_addr.prod_code,
 			 sbdev->e_addr.dev_index,
