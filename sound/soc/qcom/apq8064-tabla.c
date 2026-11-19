@@ -21,7 +21,6 @@ struct apq8064_tabla {
 	struct gpio_desc *spk_en;
 	struct gpio_desc *spk_en2;
 	struct snd_soc_jack headphone_jack;
-	struct snd_soc_jack_pin headphone_pin;
 	struct snd_soc_jack_gpio headphone_gpio;
 };
 
@@ -111,12 +110,16 @@ static int apq8064_tabla_link_init(struct snd_soc_pcm_runtime *rtd)
 	if (!device_property_present(card->dev, "hp-det-gpios"))
 		return 0;
 
-	priv->headphone_pin.pin = "Headphone";
-	priv->headphone_pin.mask = SND_JACK_HEADPHONE;
-	ret = snd_soc_card_jack_new_pins(card, "Headphone Jack",
-					 SND_JACK_HEADPHONE,
-					 &priv->headphone_jack,
-					 &priv->headphone_pin, 1);
+	/*
+	 * Report the jack state to userspace only. Do not let the jack drive
+	 * the "Headphone" DAPM pin from its IRQ work: that tears the headphone
+	 * chain down while the PCM is still streaming into it, which leaves
+	 * the SLIMbus RX transport stuck and silences the rear speaker until
+	 * an RX1 stream is restarted. UCM owns the pin through the
+	 * Headphone Switch control and changes it only after the stream moved.
+	 */
+	ret = snd_soc_card_jack_new(card, "Headphone Jack", SND_JACK_HEADPHONE,
+				    &priv->headphone_jack);
 	if (ret)
 		return ret;
 
