@@ -1405,18 +1405,14 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		dev_err_probe(dev, ret, "failed to enable mclk\n");
 		goto err_disable;
 	}
-	/* Both jflte and flo downstream reset for 20 ms at initial probe. */
-	mutex_lock(&tabla->init_lock);
-	tabla->mclk_enabled = true;
-	ret = tabla->reset ? tabla_slim_reset_cycle(sdev, tabla, 20) : 0;
-	mutex_unlock(&tabla->init_lock);
-	if (ret)
-		goto err_disable;
-	ret = devm_add_action_or_reset(dev, tabla_slim_disable_hw, tabla);
-	if (ret)
-		goto err_disable;
-
-	/* Keep the bus active while both codec functions re-enumerate. */
+	/*
+	 * Keep the bus active before the codec is reset: it reports present
+	 * on the bus as soon as RESET_B is released, and the controller has to
+	 * be running to receive that report and assign the logical addresses.
+	 * With the controller runtime-suspended the assignment is rejected
+	 * (-ENOTCONN) and the codec comes up without addresses, which then
+	 * needs a second, 1 s reset cycle.
+	 */
 	ret = pm_runtime_resume_and_get(sdev->dev.parent);
 	if (ret < 0) {
 		/*
@@ -1426,8 +1422,26 @@ static int tabla_slim_probe(struct slim_device *sdev)
 		 */
 		dev_err_probe(dev, ret, "failed to resume slimbus controller\n");
 		ret = (ret == -EACCES || ret == -EBUSY) ? -EPROBE_DEFER : ret;
+		/* mclk_enabled is not set yet, so release the clock here. */
+		clk_disable_unprepare(tabla->mclk);
 		goto err_disable;
 	}
+
+	/* Both jflte and flo downstream reset for 20 ms at initial probe. */
+	mutex_lock(&tabla->init_lock);
+	tabla->mclk_enabled = true;
+	ret = tabla->reset ? tabla_slim_reset_cycle(sdev, tabla, 20) : 0;
+	mutex_unlock(&tabla->init_lock);
+	if (ret) {
+		pm_runtime_put_sync(sdev->dev.parent);
+		goto err_disable;
+	}
+	ret = devm_add_action_or_reset(dev, tabla_slim_disable_hw, tabla);
+	if (ret) {
+		pm_runtime_put_sync(sdev->dev.parent);
+		goto err_disable;
+	}
+
 	for (i = 0; i < 50; i++) {
 		if (sdev->status == SLIM_DEVICE_STATUS_UP)
 			break;
