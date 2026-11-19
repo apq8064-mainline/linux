@@ -515,6 +515,9 @@ static SOC_VALUE_ENUM_SINGLE_DECL(rx3_mix1_inp1_enum, TABLA_A_CDC_CONN_RX3_B1_CT
 static SOC_VALUE_ENUM_SINGLE_DECL(rx5_mix1_inp1_enum, TABLA_A_CDC_CONN_RX5_B1_CTL,
 					0, 0xf, rx_mix1_text, rx_mix1_values);
 
+static SOC_ENUM_SINGLE_DECL(rx4_dsm_enum, TABLA_A_CDC_RX4_B6_CTL, 4,
+			    rx_dsm_text);
+
 static SOC_ENUM_SINGLE_DECL(rx6_dsm_enum, TABLA_A_CDC_RX6_B6_CTL, 4,
 			    rx_dsm_text);
 
@@ -526,6 +529,8 @@ static const struct snd_kcontrol_new rx3_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX3 MIX1 INP1 Mux", rx3_mix1_inp1_enum);
 static const struct snd_kcontrol_new rx5_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX5 MIX1 INP1 Mux", rx5_mix1_inp1_enum);
+static const struct snd_kcontrol_new rx4_dsm_mux =
+	SOC_DAPM_ENUM("RX4 DSM MUX", rx4_dsm_enum);
 static const struct snd_kcontrol_new rx6_dsm_mux =
 	SOC_DAPM_ENUM("RX6 DSM MUX", rx6_dsm_enum);
 
@@ -676,6 +681,8 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			   SND_SOC_DAPM_POST_PMD),
 
+	SND_SOC_DAPM_MUX("RX4 DSM MUX", SND_SOC_NOPM, 0, 0, &rx4_dsm_mux),
+
 	SND_SOC_DAPM_OUTPUT("LINEOUT1"),
 
 	SND_SOC_DAPM_OUTPUT("LINEOUT2"),
@@ -699,13 +706,15 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "LINEOUT4 DAC", NULL, "RX6 DSM MUX" },
 
 	/*
-	 * Bottom speaker amp pair: LINEOUT1 through the RX3 chain and
-	 * LINEOUT3 from RX5, mirroring downstream's ext-spek bottom routing.
+	 * Bottom amplifier on tabla2x: LINEOUT1 carries RX3 and LINEOUT3
+	 * carries its inverted copy through RX4 DSM, matching downstream.
 	 */
 	{ "RX3 MIX1 INP1 Mux", "RX1", "SLIM RX" },
+	{ "RX3 MIX1 INP1 Mux", "RX2", "SLIM RX" },
 	{ "RX3 MIX1", NULL, "RX3 MIX1 INP1 Mux" },
 	{ "LINEOUT1 DAC", NULL, "RX3 MIX1" },
-	{ "LINEOUT3 DAC", NULL, "RX5 MIX1" },
+	{ "RX4 DSM MUX", "DSM_INV", "RX3 MIX1" },
+	{ "LINEOUT3 DAC", NULL, "RX4 DSM MUX" },
 
 	/*
 	 * Earpiece: the selected mono SLIMbus playback port into the RX1
@@ -756,6 +765,7 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "RX5 MIX1", NULL, "CDC CLK" },
 	{ "RX3 MIX1", NULL, "RX_BIAS" },
 	{ "RX3 MIX1", NULL, "CDC CLK" },
+	{ "RX4 DSM MUX", NULL, "CDC CLK" },
 	{ "RX6 DSM MUX", NULL, "CDC CLK" },
 
 	{ "CP", NULL, "RX_BIAS" },
@@ -836,6 +846,10 @@ static int tabla_dai_hw_params(struct snd_pcm_substream *substream,
 	    params_format(params) != SNDRV_PCM_FORMAT_S16_LE)
 		return -EINVAL;
 	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX1_B5_CTL,
+				 0xe0, 0x60);
+	if (ret)
+		return ret;
+	ret = regmap_update_bits(tabla->regmap, TABLA_A_CDC_RX3_B5_CTL,
 				 0xe0, 0x60);
 	if (ret)
 		return ret;
@@ -1002,7 +1016,7 @@ static int tabla_init_regs(struct regmap *regmap)
 	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B5_CTL, 0x78);
 	if (ret)
 		return ret;
-	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B6_CTL, 0x80);
+	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B6_CTL, 0x90);
 	if (ret)
 		return ret;
 	ret = regmap_write(regmap, TABLA_A_CDC_RX5_B5_CTL, 0x78);
@@ -1043,7 +1057,8 @@ static int tabla_init_regs(struct regmap *regmap)
 	 * Route the SLIM RX slots to the output chains before DAPM creates the
 	 * mux paths.  The mux registers must agree with the DAPM routes: DAPM
 	 * only powers a chain when the register selects the source named in the
-	 * route table.  HPHL/LINEOUT/EAR use slot 0 ("RX1"); HPHR uses slot 1
+	 * route table.  HPHL/top speaker/EAR use slot 0 ("RX1"); HPHR and the bottom
+	 * speaker use slot 1
 	 * ("RX2") so the two headphone channels are independent.
 	 */
 	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX1_B1_CTL, 0x0f, 0x05);
@@ -1052,7 +1067,7 @@ static int tabla_init_regs(struct regmap *regmap)
 	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX2_B1_CTL, 0x0f, 0x06);
 	if (ret)
 		return ret;
-	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX3_B1_CTL, 0x0f, 0x05);
+	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX3_B1_CTL, 0x0f, 0x06);
 	if (ret)
 		return ret;
 	ret = regmap_update_bits(regmap, TABLA_A_CDC_CONN_RX5_B1_CTL, 0x0f, 0x05);
