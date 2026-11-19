@@ -690,6 +690,9 @@
 };
 
 &slimbus {
+	/* Stereo host playback uses one BAM pipe per SLIM RX channel. */
+	dmas = <&slimbam 24>, <&slimbam 25>;
+	dma-names = "tx0", "tx1";
 	pinctrl-names = "default";
 	pinctrl-0 = <&slimbus_default_state>;
 	status = "okay";
