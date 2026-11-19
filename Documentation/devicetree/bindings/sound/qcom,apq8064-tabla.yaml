@@ -25,6 +25,12 @@ properties:
     $ref: /schemas/types.yaml#/definitions/phandle
     description: WCD9310 PGD device on the SLIMbus controller
 
+  speaker-bottom-en-gpios:
+    maxItems: 1
+    description: |
+      Active-high enable for an optional second speaker amplifier connected
+      to LINEOUT1/3, as on the Nexus 7 (flo).
+
   hp-det-gpios:
     maxItems: 1
     description: Headphone jack insertion detection
