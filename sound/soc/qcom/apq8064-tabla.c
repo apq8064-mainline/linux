@@ -124,8 +124,19 @@ static int apq8064_tabla_link_init(struct snd_soc_pcm_runtime *rtd)
 	priv->headphone_gpio.report = SND_JACK_HEADPHONE;
 	priv->headphone_gpio.debounce_time = 150;
 
-	return snd_soc_jack_add_gpiods(card->dev, &priv->headphone_jack, 1,
-				       &priv->headphone_gpio);
+	ret = snd_soc_jack_add_gpiods(card->dev, &priv->headphone_jack, 1,
+				      &priv->headphone_gpio);
+	if (ret)
+		return ret;
+
+	/* TEMP diagnostic: jack reports inverted on jflte; drop once fixed. */
+	dev_info(card->dev, "hp-det: active_low=%d raw=%d logical=%d invert=%d\n",
+		 gpiod_is_active_low(priv->headphone_gpio.desc),
+		 gpiod_get_raw_value_cansleep(priv->headphone_gpio.desc),
+		 gpiod_get_value_cansleep(priv->headphone_gpio.desc),
+		 priv->headphone_gpio.invert);
+
+	return 0;
 }
 
 static void apq8064_tabla_link_exit(struct snd_soc_pcm_runtime *rtd)
