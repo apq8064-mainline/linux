@@ -1172,6 +1172,8 @@ static int tabla_slim_init(struct slim_device *sdev,
 
 	if (status != SLIM_DEVICE_STATUS_UP || tabla->registered)
 		return 0;
+	if (sdev->status != SLIM_DEVICE_STATUS_UP || !sdev->is_laddr_valid)
+		return -ETIMEDOUT;
 
 	/*
 	 * The interface device may not have reported present yet when the
@@ -1295,8 +1297,9 @@ static void tabla_slim_disable_hw(void *data)
  */
 static bool tabla_slim_codec_unreachable(int ret)
 {
+	/* slim_device_alloc_laddr() maps assignment failures to -EINVAL. */
 	return ret == -ETIMEDOUT || ret == -ENOTCONN || ret == -EIO ||
-	       ret == -EACCES || ret == -EBUSY;
+	       ret == -EACCES || ret == -EBUSY || ret == -EINVAL;
 }
 
 /* Called under init_lock so enumeration cannot initialise a half-reset codec. */
@@ -1461,22 +1464,9 @@ static int tabla_slim_probe(struct slim_device *sdev)
 	mutex_lock(&tabla->init_lock);
 	ret = tabla->registered ? 0 : tabla_slim_reset_cycle(sdev, tabla, 1000);
 	mutex_unlock(&tabla->init_lock);
-	if (ret) {
-		/*
-		 * No usable reset line: wait for the codec to
-		 * stabilise on its own.
-		 */
-		bool stale_up = sdev->status == SLIM_DEVICE_STATUS_UP;
-		unsigned long settle = jiffies + msecs_to_jiffies(5000);
-		unsigned long deadline = jiffies + msecs_to_jiffies(10000);
-
-		dev_info(dev, "no reset line, waiting for codec to stabilise\n");
-		do {
-			if (sdev->status == SLIM_DEVICE_STATUS_UP &&
-			    (!stale_up || time_after(jiffies, settle)))
-				break;
-			usleep_range(100000, 110000);
-		} while (time_before(jiffies, deadline));
+	if (ret && ret != -ENODEV) {
+		pm_runtime_put_sync(sdev->dev.parent);
+		goto err_disable;
 	}
 
 	{
