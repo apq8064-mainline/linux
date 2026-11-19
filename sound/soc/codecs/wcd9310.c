@@ -515,9 +515,6 @@ static SOC_VALUE_ENUM_SINGLE_DECL(rx3_mix1_inp1_enum, TABLA_A_CDC_CONN_RX3_B1_CT
 static SOC_VALUE_ENUM_SINGLE_DECL(rx5_mix1_inp1_enum, TABLA_A_CDC_CONN_RX5_B1_CTL,
 					0, 0xf, rx_mix1_text, rx_mix1_values);
 
-static SOC_ENUM_SINGLE_DECL(rx4_dsm_enum, TABLA_A_CDC_RX4_B6_CTL, 4,
-			    rx_dsm_text);
-
 static SOC_ENUM_SINGLE_DECL(rx6_dsm_enum, TABLA_A_CDC_RX6_B6_CTL, 4,
 			    rx_dsm_text);
 
@@ -529,8 +526,6 @@ static const struct snd_kcontrol_new rx3_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX3 MIX1 INP1 Mux", rx3_mix1_inp1_enum);
 static const struct snd_kcontrol_new rx5_mix1_inp1_mux =
 	SOC_DAPM_ENUM("RX5 MIX1 INP1 Mux", rx5_mix1_inp1_enum);
-static const struct snd_kcontrol_new rx4_dsm_mux =
-	SOC_DAPM_ENUM("RX4 DSM MUX", rx4_dsm_enum);
 static const struct snd_kcontrol_new rx6_dsm_mux =
 	SOC_DAPM_ENUM("RX6 DSM MUX", rx6_dsm_enum);
 
@@ -681,8 +676,6 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			   SND_SOC_DAPM_POST_PMD),
 
-	SND_SOC_DAPM_MUX("RX4 DSM MUX", SND_SOC_NOPM, 0, 0, &rx4_dsm_mux),
-
 	SND_SOC_DAPM_OUTPUT("LINEOUT1"),
 
 	SND_SOC_DAPM_OUTPUT("LINEOUT2"),
@@ -706,15 +699,18 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "LINEOUT4 DAC", NULL, "RX6 DSM MUX" },
 
 	/*
-	 * Bottom amplifier on tabla2x: LINEOUT1 carries RX3 and LINEOUT3
-	 * carries its inverted copy through RX4 DSM, matching downstream.
+	 * Bottom amplifier: a stereo pair, LINEOUT1 carries the right channel
+	 * through the RX3 chain (RX3 MIX1 INP1 = RX2) and LINEOUT3 the left
+	 * channel through RX5 (INP1 = RX1). The flo downstream mixer paths
+	 * set RX3 MIX1 INP1 = RX2, RX4 MIX1 INP1 = RX1 and leave both DSM
+	 * muxes on CIC_OUT, so LINEOUT3 is the left channel and not an
+	 * inverted copy of LINEOUT1.
 	 */
 	{ "RX3 MIX1 INP1 Mux", "RX1", "SLIM RX" },
 	{ "RX3 MIX1 INP1 Mux", "RX2", "SLIM RX" },
 	{ "RX3 MIX1", NULL, "RX3 MIX1 INP1 Mux" },
 	{ "LINEOUT1 DAC", NULL, "RX3 MIX1" },
-	{ "RX4 DSM MUX", "DSM_INV", "RX3 MIX1" },
-	{ "LINEOUT3 DAC", NULL, "RX4 DSM MUX" },
+	{ "LINEOUT3 DAC", NULL, "RX5 MIX1" },
 
 	/*
 	 * Earpiece: the selected mono SLIMbus playback port into the RX1
@@ -765,7 +761,6 @@ static const struct snd_soc_dapm_route tabla_dapm_routes[] = {
 	{ "RX5 MIX1", NULL, "CDC CLK" },
 	{ "RX3 MIX1", NULL, "RX_BIAS" },
 	{ "RX3 MIX1", NULL, "CDC CLK" },
-	{ "RX4 DSM MUX", NULL, "CDC CLK" },
 	{ "RX6 DSM MUX", NULL, "CDC CLK" },
 
 	{ "CP", NULL, "RX_BIAS" },
@@ -1021,7 +1016,7 @@ static int tabla_init_regs(struct regmap *regmap)
 	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B5_CTL, 0x78);
 	if (ret)
 		return ret;
-	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B6_CTL, 0x90);
+	ret = regmap_write(regmap, TABLA_A_CDC_RX4_B6_CTL, 0x80);
 	if (ret)
 		return ret;
 	ret = regmap_write(regmap, TABLA_A_CDC_RX5_B5_CTL, 0x78);
